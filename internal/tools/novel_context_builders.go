@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
 )
 
@@ -189,6 +190,7 @@ func (t *ContextTool) buildRuleViolations(result map[string]any, chapter int, sn
 	}
 	violations := rules.Lint(record.Content)
 	violations = append(violations, rules.Check(record.Content, snap.Structured)...)
+	violations = append(violations, rules.CheckAgainstPrevious(record.Content, previousChapterTexts(t.store, chapter))...)
 	if len(violations) > 0 {
 		result["rule_violations"] = violations
 	}
@@ -505,6 +507,10 @@ func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope
 		}
 		if len(state.progress.HookHistory) > 0 {
 			checkpoint["hook_history"] = state.progress.HookHistory
+			if lang.IsVI() {
+				// 同时给出计数：只给序列，模型会自己数而且数错。
+				checkpoint["hook_type_counts"] = domain.HookTypeCounts(state.progress.HookHistory)
+			}
 		}
 		envelope.Working["checkpoint"] = checkpoint
 	}

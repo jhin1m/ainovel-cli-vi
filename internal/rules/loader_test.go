@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
 // TestEnsureRulesDirAt 验证备好目录 + README.txt：写入说明、始终覆盖为最新模板，
@@ -20,7 +22,7 @@ func TestEnsureRulesDirAt(t *testing.T) {
 		t.Fatalf("README.txt should be written: %v", err)
 	}
 	// 砍 YAML 后引导改讲"大白话 + 自动归一化"，不再教 front matter。
-	if !strings.Contains(string(data), "归一化") {
+	if !strings.Contains(string(data), "chuẩn hoá") {
 		t.Errorf("README.txt 应说明自然语言会被归一化，got %q", data)
 	}
 	if strings.Contains(string(data), "front matter") {
@@ -34,7 +36,7 @@ func TestEnsureRulesDirAt(t *testing.T) {
 	if err := ensureRulesDirAt(dir); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := os.ReadFile(readme); string(again) != homeRulesReadme {
+	if again, _ := os.ReadFile(readme); string(again) != homeRulesReadme() {
 		t.Errorf("README.txt should be refreshed to latest template, got %q", again)
 	}
 
@@ -84,5 +86,14 @@ func TestDefaultOptions_ScansProjectRulesFromDotAinovel(t *testing.T) {
 	}
 	if got.Label != "project:book.md" {
 		t.Errorf("来源标签应为 project:book.md，得到 %q", got.Label)
+	}
+}
+
+// language=zh 时引导文案保持上游中文原样。
+func TestHomeRulesReadme_ZH(t *testing.T) {
+	lang.Set(lang.ZH)
+	t.Cleanup(func() { lang.Set(lang.VI) })
+	if got := homeRulesReadme(); !strings.Contains(got, "归一化") {
+		t.Errorf("zh README 应为上游中文模板，got %q", got)
 	}
 }
