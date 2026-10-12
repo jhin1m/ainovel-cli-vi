@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/voocel/ainovel-cli/internal/chapterfacts"
 	"github.com/voocel/ainovel-cli/internal/errs"
@@ -30,6 +31,18 @@ func (t *CommitChapterTool) validateCommitArgs(a commitArgs) error {
 		for i, update := range a.ForeshadowUpdates {
 			switch update.Action {
 			case "plant":
+				if placeholderForeshadowID(update.ID) {
+					return fmt.Errorf("foreshadow_updates[%d].id = %q là id giữ chỗ, không phải định danh. Mỗi phục bút cần một id duy nhất và ổn định "+
+						"(ví dụ FORESHADOW_OBSERVER, jade-pendant) để các chương sau advance/resolve; dùng lại id giữ chỗ sẽ khiến phục bút mới đè lên mục cũ: %w",
+						i, update.ID, errs.ErrToolArgs)
+				}
+				// 账本按 id 去重：别的章已种下同一 id 时，本次 plant 会被静默吞掉（描述一并
+				// 丢失）。同章重放（返工/恢复）是幂等的，放行。
+				if at := plantedAt[update.ID]; at != 0 && at != a.Chapter {
+					return fmt.Errorf("foreshadow_updates[%d].id %q đã được chương %d dùng; phục bút mới cần id riêng chưa từng dùng, "+
+						"muốn tiếp nối phục bút cũ thì dùng action advance/resolve: %w",
+						i, update.ID, at, errs.ErrToolArgs)
+				}
 				declared[update.ID] = struct{}{}
 			case "advance", "resolve":
 				if _, ok := declared[update.ID]; ok {
@@ -47,4 +60,16 @@ func (t *CommitChapterTool) validateCommitArgs(a commitArgs) error {
 		}
 	}
 	return nil
+}
+
+// placeholderForeshadowIDs 是模型常写进 id 字段的占位词：它们没有标识作用，复用后
+// 第二条起的新伏笔都会撞上第一条。仅在新提交时拦截，历史章节记录重放不受影响。
+var placeholderForeshadowIDs = map[string]struct{}{
+	"new": {}, "none": {}, "null": {}, "nil": {}, "tbd": {}, "todo": {},
+	"auto": {}, "id": {}, "-": {}, "n/a": {}, "na": {}, "unknown": {}, "?": {},
+}
+
+func placeholderForeshadowID(id string) bool {
+	_, ok := placeholderForeshadowIDs[strings.ToLower(strings.TrimSpace(id))]
+	return ok
 }
