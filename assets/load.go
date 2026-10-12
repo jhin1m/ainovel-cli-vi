@@ -323,7 +323,7 @@ func withSimulationGuidance(code lang.Code, prompt, role string) string {
 func (b *Bundle) OverridePrompt(file, raw string) error {
 	role, ok := promptRole[file]
 	if !ok {
-		return fmt.Errorf("不支持覆盖的 prompt 文件: %s（仅核心提示词可覆盖）", file)
+		return fmt.Errorf("không hỗ trợ ghi đè file prompt: %s (chỉ ghi đè được prompt lõi)", file)
 	}
 	wrapped := withSimulationGuidance(b.Language, raw, role)
 	switch file {
@@ -347,21 +347,17 @@ var promptRole = map[string]string{
 	"editor.md":          "editor",
 }
 
-const simulationGuidance = `## 仿写画像
-
-当 novel_context 的 planning_memory 或 working_memory 中存在 simulation_profile 时，必须把它视为当前作品的仿写方向约束。{{role}} 应读取其中的 style、lexicon、plot_design、hook_design、pacing_density、reader_engagement 和 role_guidance。
-
-使用原则：借鉴结构、节奏、钩子、信息释放和吸引读者的手法；不要复制原文句子、人物、地名、专有设定或固定桥段。若 simulation_profile 与用户显式要求冲突，优先服从用户要求。`
-
 const simulationGuidanceVI = `## Hồ sơ phỏng tác
 
 Khi planning_memory hoặc working_memory của novel_context có simulation_profile, bắt buộc coi đó là ràng buộc về hướng phỏng tác của tác phẩm hiện tại. {{role}} cần đọc các mục style, lexicon, plot_design, hook_design, pacing_density, reader_engagement và role_guidance trong đó.
 
 Nguyên tắc sử dụng: học cấu trúc, nhịp độ, móc câu, cách hé lộ thông tin và thủ pháp giữ chân người đọc; không chép câu văn, nhân vật, địa danh, thiết lập riêng hay tình tiết cố định của nguyên tác. Nếu simulation_profile mâu thuẫn với yêu cầu tường minh của người dùng, ưu tiên làm theo người dùng.`
 
+type overrideHeading struct{ home, book string }
+
 // overrideHeadings là tiêu đề đoạn ghép thêm khi người dùng ghi đè văn phong.
-var overrideHeadings = map[lang.Code]struct{ home, book string }{
-	lang.ZH: {"## 用户全局文风覆盖（以下要求优先于项目默认）", "## 本书文风覆盖（以下要求优先于以上全部）"},
+var overrideHeadings = map[lang.Code]overrideHeading{
+	lang.ZH: zhOverrideHeading,
 	lang.VI: {"## Ghi đè văn phong toàn cục của người dùng (các yêu cầu dưới đây ưu tiên hơn mặc định của dự án)", "## Ghi đè văn phong riêng cho cuốn này (các yêu cầu dưới đây ưu tiên hơn tất cả phần trên)"},
 }
 
@@ -406,7 +402,7 @@ func overlayStyles(styles map[string]string, dir string) {
 		}
 		name := strings.TrimSuffix(e.Name(), ".md")
 		if !styleNameRe.MatchString(name) {
-			slog.Warn("忽略非法风格文件名", "module", "assets", "dir", dir, "file", e.Name())
+			slog.Warn("bỏ qua file phong cách có tên không hợp lệ", "module", "assets", "dir", dir, "file", e.Name())
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, "styles", e.Name()))

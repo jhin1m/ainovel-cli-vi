@@ -33,7 +33,7 @@ func Parse(s string) (Code, error) {
 		return Default, nil
 	case "vi", "vn", "vietnamese", "tiếng việt", "tieng viet":
 		return VI, nil
-	case "zh", "cn", "chinese", "中文":
+	case "zh", "cn", "chinese", "中文": //check-han:ok bí danh cấu hình
 		return ZH, nil
 	}
 	return "", fmt.Errorf("language %q không hỗ trợ (chỉ nhận \"vi\" hoặc \"zh\")", s)
