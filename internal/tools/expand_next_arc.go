@@ -49,6 +49,9 @@ func (t *ExpandNextArcTool) Execute(_ context.Context, args json.RawMessage) (js
 	if err := json.Unmarshal(args, &expansion); err != nil {
 		return nil, fmt.Errorf("invalid args: %w: %w", errs.ErrToolArgs, err)
 	}
+	if defect := domain.StalledOutline(expansion.Chapters); defect != "" {
+		return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
+	}
 	position, err := t.store.ExpandNextArc(expansion)
 	if err != nil {
 		return nil, fmt.Errorf("expand next arc: %w: %w", errs.ErrStoreWrite, err)

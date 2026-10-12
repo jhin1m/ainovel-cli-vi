@@ -141,6 +141,9 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := decode("outline", &entries); err != nil {
 			return nil, err
 		}
+		if defect := domain.StalledOutline(entries); defect != "" {
+			return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
+		}
 		if err := t.store.Outline.SaveOutline(entries); err != nil {
 			return nil, fmt.Errorf("save outline: %w: %w", errs.ErrStoreWrite, err)
 		}
@@ -167,6 +170,9 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		var volumes []domain.VolumeOutline
 		if err := decode("layered_outline", &volumes); err != nil {
 			return nil, err
+		}
+		if defect := domain.StalledOutline(domain.FlattenOutline(volumes)); defect != "" {
+			return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
 		}
 		if err := t.store.Outline.SaveLayeredOutline(volumes); err != nil {
 			return nil, fmt.Errorf("save layered_outline: %w: %w", errs.ErrStoreWrite, err)
@@ -280,6 +286,16 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			}
 			if next <= len(outline) {
 				return nil, fmt.Errorf("Dàn ý chi tiết hiện tại còn chương chưa viết (chương kế tiếp %d / đã chi tiết hoá %d), không thể hoàn kết; muốn khép sớm hãy dùng append_volume với \"final\": true ở cấp ngoài cùng của JSON quyển để tuyên bố quyển kết: %w", next, len(outline), errs.ErrToolPrecondition)
+			}
+			// 扁平大纲只含已展开的弧，骨架弧对上面的比对完全隐形；不单独拦一次，
+			// 整弧未展开也能宣告完本。
+			volumes, volErr := t.store.Outline.LoadLayeredOutline()
+			if volErr != nil {
+				return nil, fmt.Errorf("load layered outline: %w: %w", errs.ErrStoreRead, volErr)
+			}
+			if skeletons := domain.SkeletonArcs(volumes); len(skeletons) > 0 {
+				return nil, fmt.Errorf("Còn %d cung khung chưa triển khai (ví dụ: %s), không thể hoàn kết; hãy expand_next_arc triển khai và viết xong, hoặc dùng append_volume với \"final\": true để tuyên bố quyển kết: %w",
+					len(skeletons), skeletons[0], errs.ErrToolPrecondition)
 			}
 		} else if progress.TotalChapters > 0 && next <= progress.TotalChapters {
 			return nil, fmt.Errorf("Dàn ý còn chương chưa viết (chương kế tiếp %d / tổng %d), không thể hoàn kết; muốn khép sớm hãy dùng append_volume với \"final\": true ở cấp ngoài cùng của JSON quyển để tuyên bố quyển kết: %w", next, progress.TotalChapters, errs.ErrToolPrecondition)
