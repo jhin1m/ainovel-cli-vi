@@ -122,7 +122,7 @@ func (m Model) toggleMouseReporting() (Model, tea.Cmd) {
 }
 
 // donePlaceholder 完成态输入框提示：会话内完结（doneMsg）与重启进完结书（bootstrap）共用。
-const donePlaceholder = "创作已完成 · 可输入返工要求(如\"重写第3章\")、/reopen 续写新卷、/export 导出"
+const donePlaceholder = "Đã xong · Nhập yêu cầu sửa (vd \"viết lại chương 3\"), /reopen viết quyển mới, /export xuất"
 
 // enterRunning 进入创作工作台：开启鼠标上报（工作台需要点击切面板 / 滚轮 /
 // 拖拽侧边栏）。返回的命令需由调用方 Batch 进最终返回值。
@@ -508,13 +508,13 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.snapshot.RuntimeState = "paused"
 			m.syncRuntimePlaceholder()
 		} else {
-			m.textarea.Placeholder = "运行中断，输入任意内容恢复创作"
+			m.textarea.Placeholder = "Phiên chạy bị gián đoạn, nhập nội dung bất kỳ để khôi phục sáng tác"
 		}
 		return m, tea.Batch(fetchSnapshot(m.runtime), listenDone(m.runtime)), true
 	case abortResultMsg:
 		if msg.stopped {
 			m.abortPending = true
-			m.textarea.Placeholder = "正在暂停创作..."
+			m.textarea.Placeholder = "Đang tạm dừng sáng tác..."
 		}
 		return m, nil, true
 	case reportLoadedMsg:
@@ -570,7 +570,7 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case exportDoneMsg:
 		if msg.err != nil {
 			m.applyEvent(host.Event{
-				Time: time.Now(), Category: "ERROR", Summary: "导出失败：" + msg.err.Error(), Level: "error",
+				Time: time.Now(), Category: "ERROR", Summary: "Xuất thất bại: " + msg.err.Error(), Level: "error",
 			})
 		} else if msg.result != nil {
 			m.applyEvent(host.Event{
@@ -581,9 +581,9 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	case updateCheckMsg:
 		if msg.err != nil {
-			message := "启动版本检查失败"
+			message := "Kiểm tra phiên bản khi khởi động thất bại"
 			if msg.result != nil {
-				message = "启动版本检查完成，但缓存存在异常"
+				message = "Đã kiểm tra phiên bản khi khởi động, nhưng bộ nhớ đệm có bất thường"
 			}
 			slog.Warn(message, "module", "version", "err", msg.err)
 		}
@@ -601,11 +601,11 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	case revisionDoneMsg:
 		if msg.err != nil {
-			m.applyEvent(host.Event{Time: time.Now(), Category: "ERROR", Summary: "章节同步失败：" + msg.err.Error(), Level: "error"})
+			m.applyEvent(host.Event{Time: time.Now(), Category: "ERROR", Summary: "Đồng bộ chương thất bại: " + msg.err.Error(), Level: "error"})
 		} else if msg.checkOnly {
-			summary := "未检测到章节外部修改"
+			summary := "Không phát hiện chương nào bị sửa từ bên ngoài"
 			if len(msg.chapters) > 0 {
-				summary = fmt.Sprintf("检测到章节正文已被外部修改：%v；执行 /sync 接纳", msg.chapters)
+				summary = fmt.Sprintf("Phát hiện nội dung chương đã bị sửa từ bên ngoài: %v; chạy /sync để chấp nhận", msg.chapters)
 			}
 			m.applyEvent(host.Event{Time: time.Now(), Category: "SYSTEM", Summary: summary, Level: "info"})
 		} else {
@@ -631,11 +631,11 @@ func (m Model) handleRuntimeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.modelConfig.testing = false
 		m.modelConfig.testCancel = nil
 		if errors.Is(msg.err, context.Canceled) {
-			m.modelConfig.message = "连接测试已取消"
+			m.modelConfig.message = "Đã hủy thử kết nối"
 		} else if msg.err != nil {
 			m.modelConfig.message = msg.err.Error()
 		} else {
-			m.modelConfig.message = "连接测试成功：" + msg.model
+			m.modelConfig.message = "Thử kết nối thành công: " + msg.model
 		}
 		return m, nil, true
 	case startResultMsg:
@@ -778,7 +778,7 @@ func (m Model) handleStartResultMsg(msg startResultMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunning
 			m.snapshot.IsRunning = false
 			m.snapshot.RuntimeState = "idle"
-			m.textarea.Placeholder = "启动失败，请检查模型配置或使用 /model 切换模型"
+			m.textarea.Placeholder = "Khởi động thất bại, hãy kiểm tra cấu hình mô hình hoặc dùng /model để đổi mô hình"
 			m.refreshStreamViewport()
 			m.refreshStateViewport()
 			return m, m.textarea.Focus()
@@ -811,10 +811,10 @@ func (m *Model) enterStarting(rawPrompt string) tea.Cmd {
 	enableMouse := m.enterRunning()
 	m.resetOutputPanels()
 	m.resizeTextarea()
-	m.textarea.Placeholder = "正在初始化创作..."
+	m.textarea.Placeholder = "Đang khởi tạo sáng tác..."
 	m.applyStartupPromptEvent(rawPrompt)
 	m.applyEvent(host.Event{
-		Time: time.Now(), Category: "SYSTEM", Summary: "正在初始化创作", Level: "info",
+		Time: time.Now(), Category: "SYSTEM", Summary: "Đang khởi tạo sáng tác", Level: "info",
 	})
 	m.refreshEventViewport()
 	m.refreshStreamViewport()
@@ -830,7 +830,7 @@ func (m *Model) applyStartupPromptEvent(rawPrompt string) {
 	m.applyEvent(host.Event{
 		Time:     time.Now(),
 		Category: "USER",
-		Summary:  "创作需求: " + truncate(text, maxPromptEventCols),
+		Summary:  "Yêu cầu sáng tác: " + truncate(text, maxPromptEventCols),
 		Detail:   text,
 		Level:    "info",
 	})
