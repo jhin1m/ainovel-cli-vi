@@ -42,13 +42,8 @@ func TestCheckLanguage(t *testing.T) {
 	if err := CheckLanguage(lang.ZH); err != nil {
 		t.Fatalf("zh không được báo thiếu: %v", err)
 	}
-	err := CheckLanguage(lang.VI)
-	if err != nil {
-		// Chưa dịch đủ: lỗi phải chỉ rõ file thiếu.
-		if !strings.Contains(err.Error(), "assets/") || !strings.Contains(err.Error(), "/vi/") {
-			t.Fatalf("lỗi thiếu tài nguyên không rõ ràng: %v", err)
-		}
-		return
+	if err := CheckLanguage(lang.VI); err != nil {
+		t.Fatalf("bộ tài nguyên vi phải đủ: %v", err)
 	}
 	b := Load("fantasy", LoadOptions{Language: lang.VI})
 	if b.Language != lang.VI || b.Voice == "" || b.Prompts.Writer == "" || b.References.ChapterGuide == "" {

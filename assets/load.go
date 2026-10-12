@@ -173,7 +173,7 @@ func CheckLanguage(code lang.Code) error {
 	var missing []string
 	for _, p := range baseAssetPaths() {
 		lp := localPath(code, p)
-		if _, err := fs.Stat(fsFor(p), lp); err != nil {
+		if _, err := fs.Stat(fsFor(lp), lp); err != nil {
 			missing = append(missing, "assets/"+lp)
 		}
 	}

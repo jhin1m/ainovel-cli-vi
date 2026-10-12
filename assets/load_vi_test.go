@@ -20,15 +20,8 @@ func TestVILanguageComplete(t *testing.T) {
 			t.Errorf("thiếu bản dịch assets/%s", lp)
 		}
 	}
-	// CheckLanguage hiện tra voice.md (vi) trong voiceFS thay vì promptsFS nên luôn báo
-	// thiếu prompts/vi/voice.md dù file có thật; chấp nhận đúng lỗi đó, mọi file khác phải đủ.
-	// Khi loader sửa (fsFor(lp)), nhánh này tự hết và CheckLanguage phải trả nil.
 	if err := CheckLanguage(lang.VI); err != nil {
-		msg := err.Error()
-		if !strings.Contains(msg, "thiếu 1 tài nguyên") || !strings.Contains(msg, "assets/prompts/vi/voice.md") {
-			t.Fatal(err)
-		}
-		t.Logf("CheckLanguage báo nhầm voice.md: %v", err)
+		t.Fatal(err)
 	}
 }
 
