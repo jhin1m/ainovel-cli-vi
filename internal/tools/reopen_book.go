@@ -16,7 +16,7 @@ import (
 // 队列跑完 commit_chapter 自动重新收尾完结。Gate / Router / edit / commit 重逻辑均无需改动。
 func ReopenBook(s *store.Store, chapters []int, reason string) error {
 	if len(chapters) == 0 {
-		return fmt.Errorf("chapters 不能为空，需指明要返工的章节: %w", errs.ErrToolArgs)
+		return fmt.Errorf("chapters không được rỗng, cần chỉ rõ các chương cần viết lại: %w", errs.ErrToolArgs)
 	}
 
 	progress, err := s.Progress.Load()
@@ -24,7 +24,7 @@ func ReopenBook(s *store.Store, chapters []int, reason string) error {
 		return fmt.Errorf("load progress: %w: %w", errs.ErrStoreRead, err)
 	}
 	if progress == nil {
-		return fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+		return fmt.Errorf("progress chưa được khởi tạo: %w", errs.ErrToolPrecondition)
 	}
 	// 只能返工已写章；不在已完成集合的章号属续写/越界，明确拒绝引导用户走篇幅调整。
 	var invalid []int
@@ -34,7 +34,7 @@ func ReopenBook(s *store.Store, chapters []int, reason string) error {
 		}
 	}
 	if len(invalid) > 0 {
-		return fmt.Errorf("第 %v 章尚未写完，reopen 只能返工已完成章节（新增/扩展剧情请走篇幅调整）: %w", invalid, errs.ErrToolPrecondition)
+		return fmt.Errorf("Chương %v chưa viết xong, reopen chỉ viết lại được chương đã hoàn thành (thêm/mở rộng cốt truyện thì dùng điều chỉnh độ dài): %w", invalid, errs.ErrToolPrecondition)
 	}
 
 	// phase 前置校验在 store.Reopen 内兜底（仅 complete 可调）。

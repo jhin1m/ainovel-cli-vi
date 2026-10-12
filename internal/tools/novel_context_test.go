@@ -809,13 +809,13 @@ func TestContextToolSelectedMemoryRecallsStoryThreadsAndReviewLessons(t *testing
 	if containsRecallSummary(payload.Selected.StoryThreads, "试炼规则碑文残卷") {
 		t.Fatalf("expected weak-overlap foreshadow to stay out, got %+v", payload.Selected.StoryThreads)
 	}
-	if containsRecallSummary(payload.Selected.StoryThreads, "建议回看第") {
+	if containsRecallSummary(payload.Selected.StoryThreads, "chương gieo phục bút") {
 		t.Fatalf("expected related_chapters not to be duplicated into story_threads, got %+v", payload.Selected.StoryThreads)
 	}
-	if !containsRecallSummary(payload.Selected.ReviewLessons, "contract 漏项") {
+	if !containsRecallSummary(payload.Selected.ReviewLessons, "bỏ sót contract") {
 		t.Fatalf("expected review lesson recall to mention contract miss, got %+v", payload.Selected.ReviewLessons)
 	}
-	if !strings.Contains(payload.Summary, "线索召回:") || !strings.Contains(payload.Summary, "评审召回:") {
+	if !strings.Contains(payload.Summary, "gợi lại tuyến truyện:") || !strings.Contains(payload.Summary, "gợi lại bài học duyệt:") {
 		t.Fatalf("expected loading summary to report selected memory, got %q", payload.Summary)
 	}
 }
@@ -876,7 +876,7 @@ func TestContextToolSelectedMemorySurfacesAgingForeshadow(t *testing.T) {
 	if !containsRecallSummary(payload.Selected.StoryThreads, "失落的血脉") {
 		t.Fatalf("expected second aging foreshadow to surface, got %+v", payload.Selected.StoryThreads)
 	}
-	if !containsRecallSummary(payload.Selected.StoryThreads, "未回收") {
+	if !containsRecallSummary(payload.Selected.StoryThreads, "chưa thu hồi") {
 		t.Fatalf("expected aging item to carry overdue annotation, got %+v", payload.Selected.StoryThreads)
 	}
 	// 近期伏笔（账龄 <30 且不相关）不应被回填。
@@ -1271,5 +1271,26 @@ func TestContextToolComputesRuleViolationsFromAcceptedContent(t *testing.T) {
 	_ = json.Unmarshal(raw3, &result3)
 	if _, has := result3["rule_violations"]; has {
 		t.Fatal("规则更新后不应残留旧的 rule_violations")
+	}
+}
+
+func TestPreviousTailDoesNotSplitVietnameseWord(t *testing.T) {
+	text := "một hai ba bốn năm"
+	if got := previousTail(text, 100); got != text {
+		t.Fatalf("short text must be kept whole, got %q", got)
+	}
+	// 截断点落在 "bốn" 中间：残词 "n" 必须丢弃。
+	if got := previousTail(text, 5); got != "năm" {
+		t.Fatalf("expected partial word dropped, got %q", got)
+	}
+	// 截断点恰好在词边界：保留完整词。
+	if got := previousTail(text, 7); got != "bốn năm" {
+		t.Fatalf("expected boundary cut kept, got %q", got)
+	}
+
+	lang.Set(lang.ZH)
+	t.Cleanup(func() { lang.Set(lang.VI) })
+	if got := previousTail("一二三四五", 3); got != "三四五" {
+		t.Fatalf("zh tail must stay rune-based, got %q", got)
 	}
 }

@@ -3,6 +3,8 @@ package tools
 import (
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/lang"
@@ -476,7 +478,7 @@ func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope
 		if volumes, err := t.store.Outline.LoadLayeredOutline(); err == nil {
 			if fv := domain.FinaleVolume(volumes); fv > 0 {
 				if b, boundaryErr := t.store.Outline.CheckArcBoundary(state.chapter); boundaryErr == nil && b != nil && b.Volume == fv {
-					envelope.Working["finale"] = "本卷为全书收官卷：不再新开长线或埋新伏笔，优先回收既有伏笔、收拢关系线，按大纲把故事推向终局。"
+					envelope.Working["finale"] = "Quyển này là quyển kết của cả truyện: không mở tuyến dài mới hay gieo phục bút mới, ưu tiên thu hồi phục bút đã có, khép lại các tuyến quan hệ, theo dàn ý đẩy câu chuyện tới kết cục."
 				} else {
 					reads.require("arc_boundary", boundaryErr)
 				}
@@ -517,11 +519,7 @@ func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope
 
 	if state.chapter > 1 {
 		if prevText, err := t.store.Drafts.LoadChapterText(state.chapter - 1); err == nil && prevText != "" {
-			runes := []rune(prevText)
-			if len(runes) > 800 {
-				runes = runes[len(runes)-800:]
-			}
-			envelope.Working["previous_tail"] = string(runes)
+			envelope.Working["previous_tail"] = previousTail(prevText, 800)
 		} else {
 			reads.require("previous_chapter", err)
 		}
@@ -966,4 +964,20 @@ func (t *ContextTool) buildArchitectReferences(envelope *architectContextEnvelop
 	}
 
 	envelope.References["references"] = t.architectReferences()
+}
+
+// previousTail 取前章末尾 maxRunes 个字符。越南语按空格分词，截断点若落在词中间，
+// 丢掉开头的残词，避免模型看到半个音节。
+func previousTail(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	tail := string(runes[len(runes)-maxRunes:])
+	if lang.IsVI() && !unicode.IsSpace(runes[len(runes)-maxRunes-1]) {
+		if i := strings.IndexFunc(tail, unicode.IsSpace); i >= 0 {
+			tail = strings.TrimLeftFunc(tail[i:], unicode.IsSpace)
+		}
+	}
+	return tail
 }
