@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,5 +131,30 @@ func TestValidateBaseRejectsBadStreamIdleTimeout(t *testing.T) {
 	}
 	if err := cfg.ValidateBase(); !errors.Is(err, errs.ErrConfig) {
 		t.Fatalf("非法 stream_idle_timeout 应拒绝并包装 ErrConfig，得到: %v", err)
+	}
+}
+
+func TestConfigLanguageDefaultsAndValidation(t *testing.T) {
+	c := Config{Provider: "p", ModelName: "m", Providers: map[string]ProviderConfig{"p": {APIKey: "k"}}}
+	c.FillDefaults()
+	if c.Language != "vi" || c.LanguageCode() != "vi" {
+		t.Fatalf("language mặc định phải là vi, có %q", c.Language)
+	}
+	c.Language = " ZH "
+	c.FillDefaults()
+	if c.Language != "zh" {
+		t.Fatalf("language phải được chuẩn hoá thành zh, có %q", c.Language)
+	}
+	c.Language = "klingon"
+	c.FillDefaults()
+	if err := c.ValidateBase(); err == nil || !strings.Contains(err.Error(), "klingon") {
+		t.Fatalf("language lạ phải bị ValidateBase từ chối, err=%v", err)
+	}
+}
+
+func TestMergeConfigLanguageOverlay(t *testing.T) {
+	got := mergeConfig(Config{Language: "vi"}, Config{Language: "zh"})
+	if got.Language != "zh" {
+		t.Fatalf("overlay language phải ghi đè, có %q", got.Language)
 	}
 }

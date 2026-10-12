@@ -10,6 +10,7 @@ import (
 
 	"github.com/voocel/agentcore/llm"
 	"github.com/voocel/ainovel-cli/internal/errs"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/notify"
 	"github.com/voocel/ainovel-cli/internal/utils"
@@ -216,6 +217,8 @@ type Config struct {
 
 	// 创作参数
 	Style string `json:"style,omitempty"`
+	// Language là ngôn ngữ sáng tác: "vi" (mặc định) hoặc "zh" (prompt gốc upstream).
+	Language string `json:"language,omitempty"`
 
 	// ContextWindow 是旧版全局上下文窗口，保留为模型专属 context_window 之后的
 	// 兼容回退。仅影响压缩阈值，不改变 LLM API 实际请求长度。
@@ -260,6 +263,10 @@ func (c *Config) ValidateBase() error {
 	}
 	if err := validateConfigText("model", c.ModelName); err != nil {
 		return err
+	}
+
+	if _, err := lang.Parse(c.Language); err != nil {
+		return fmt.Errorf("%v: %w", err, errs.ErrConfig)
 	}
 
 	if c.Provider == "" {
@@ -427,9 +434,22 @@ func (c *Config) FillDefaults() {
 	if c.Style == "" {
 		c.Style = "default"
 	}
+	// Giá trị không hợp lệ giữ nguyên để ValidateBase báo lỗi.
+	if code, err := lang.Parse(c.Language); err == nil {
+		c.Language = string(code)
+	}
 	if c.Budget.Enabled() && c.Budget.WarnRatio == 0 {
 		c.Budget.WarnRatio = 0.8
 	}
+}
+
+// LanguageCode trả về ngôn ngữ sáng tác đã chuẩn hoá; giá trị lỗi rơi về mặc định.
+func (c Config) LanguageCode() lang.Code {
+	code, err := lang.Parse(c.Language)
+	if err != nil {
+		return lang.Default
+	}
+	return code
 }
 
 // ContextWindowSource 标记窗口取值的来源，供日志/诊断使用。

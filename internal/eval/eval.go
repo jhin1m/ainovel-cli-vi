@@ -11,6 +11,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
 // Command 是 `ainovel-cli eval` 子命令入口，返回进程退出码：
@@ -49,6 +50,11 @@ func Command(argv []string) int {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "eval: 加载配置失败: %v\n", err)
+		return 2
+	}
+	lang.Set(cfg.LanguageCode())
+	if err := assets.CheckLanguage(cfg.LanguageCode()); err != nil {
+		fmt.Fprintf(os.Stderr, "eval: %v\n", err)
 		return 2
 	}
 
@@ -99,7 +105,7 @@ func Command(argv []string) int {
 		if variantName == "" {
 			runs := make([]RunResult, 0, *repeat)
 			for i := 1; i <= *repeat; i++ {
-				bundle := assets.Load(style, assets.LoadOptions{}) // 纯内置,确定性 baseline,不受本机覆盖污染
+				bundle := assets.Load(style, assets.LoadOptions{Language: cfg.LanguageCode()}) // 纯内置,确定性 baseline,不受本机覆盖污染
 				dir := runDir(*outDir, c.ID, ArmSingle, i, *repeat)
 				res := runOne(cfg, bundle, c, dir, *timeout, progressW)
 				res.Arm, res.Repeat = ArmSingle, i
@@ -113,14 +119,14 @@ func Command(argv []string) int {
 		runs := make([]RunResult, 0, *repeat*2)
 		deltas := make([]Delta, 0, *repeat)
 		for i := 1; i <= *repeat; i++ {
-			baseBundle := assets.Load(style, assets.LoadOptions{})
+			baseBundle := assets.Load(style, assets.LoadOptions{Language: cfg.LanguageCode()})
 			baseDir := runDir(*outDir, c.ID, ArmBaseline, i, *repeat)
 			base := runOne(cfg, baseBundle, c, baseDir, *timeout, progressW)
 			base.Arm, base.Repeat = ArmBaseline, i
 			runs = append(runs, RunResult{Arm: ArmBaseline, Repeat: i, Result: base})
 			fmt.Fprintf(os.Stderr, "  → baseline#%d %s\n", i, base.Outcome)
 
-			varBundle := assets.Load(style, assets.LoadOptions{})
+			varBundle := assets.Load(style, assets.LoadOptions{Language: cfg.LanguageCode()})
 			if err := applyVariant(&varBundle, variantPrompts); err != nil {
 				fmt.Fprintf(os.Stderr, "eval: variant 覆盖失败: %v\n", err)
 				return 2

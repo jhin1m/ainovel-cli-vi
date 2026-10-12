@@ -13,6 +13,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/entry/tui"
 	"github.com/voocel/ainovel-cli/internal/eval"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	buildversion "github.com/voocel/ainovel-cli/internal/version"
 )
@@ -108,7 +109,17 @@ func runWithConfig(cfg bootstrap.Config, opts cliOptions, args []string) {
 	// FillDefaults 必须先于资产加载:OutputDir 是运行时字段,默认值在此归一——
 	// 否则默认配置下 <书目录>/style/ 的本书级文风覆盖永远不会被加载。
 	cfg.FillDefaults()
-	bundle := assets.Load(cfg.Style, assets.DefaultLoadOptions(cfg.OutputDir))
+	code, err := lang.Parse(cfg.Language)
+	if err != nil {
+		die("error: %v", err)
+	}
+	lang.Set(code)
+	if err := assets.CheckLanguage(code); err != nil {
+		die("error: %v", err)
+	}
+	loadOpts := assets.DefaultLoadOptions(cfg.OutputDir)
+	loadOpts.Language = code
+	bundle := assets.Load(cfg.Style, loadOpts)
 	if opts.Headless {
 		prompt, err := loadPrompt(opts)
 		if err != nil {

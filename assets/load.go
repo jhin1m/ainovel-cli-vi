@@ -3,22 +3,26 @@ package assets
 import (
 	"embed"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/tools"
 )
 
-//go:embed prompts/*.md
+// prompts/ và styles/ nhúng cả thư mục để kéo theo bản dịch ở prompts/vi/, styles/vi/.
+//
+//go:embed prompts
 var promptsFS embed.FS
 
 //go:embed references
 var referencesFS embed.FS
 
-//go:embed styles/*.md
+//go:embed styles
 var stylesFS embed.FS
 
 //go:embed voice.md
@@ -50,6 +54,7 @@ type Bundle struct {
 	Prompts    Prompts
 	Styles     map[string]string
 	Voice      string // 写作标准(文风层),已按三层覆盖组装;见 docs/voice-layer.md
+	Language   lang.Code
 }
 
 // LoadOptions 声明文风层的覆盖来源。空目录 = 跳过该层(eval 传零值以获得
@@ -60,6 +65,8 @@ type Bundle struct {
 type LoadOptions struct {
 	BookStyleDir string // <outputDir>/style
 	HomeStyleDir string // ~/.ainovel/style
+	// Language chọn bộ tài nguyên; rỗng = zh (bản gốc upstream, giữ baseline test).
+	Language lang.Code
 }
 
 // DefaultLoadOptions 根据书目录构造生产环境的覆盖来源。
@@ -77,12 +84,104 @@ func DefaultLoadOptions(outputDir string) LoadOptions {
 // Load 返回指定风格对应的资源集合。文风资产(voice / anti-ai-tone / styles /
 // 题材 style-references)按 opts 做三层覆盖:内置 < 全局 < 本书。
 func Load(style string, opts LoadOptions) Bundle {
+	code := opts.lang()
 	return Bundle{
 		References: loadReferences(style, opts),
-		Prompts:    loadPrompts(),
+		Prompts:    loadPromptsFor(code),
 		Styles:     loadStyles(opts),
-		Voice:      resolveAppendable(mustRead(voiceFS, "voice.md"), "voice.md", opts),
+		Voice:      resolveAppendable(readVoice(code), "voice.md", opts),
+		Language:   code,
 	}
+}
+
+func (o LoadOptions) lang() lang.Code {
+	if o.Language == "" {
+		return lang.ZH
+	}
+	return o.Language
+}
+
+// localPath ánh xạ đường dẫn tài nguyên gốc sang bản của ngôn ngữ code.
+// Bản tiếng Việt nằm ở thư mục con vi/ ngay dưới thư mục cấp một
+// (prompts/vi/, references/vi/, styles/vi/); voice.md tiếng Việt ở prompts/vi/voice.md.
+func localPath(code lang.Code, p string) string {
+	if code != lang.VI {
+		return p
+	}
+	if p == "voice.md" {
+		return "prompts/vi/voice.md"
+	}
+	dir, rest, ok := strings.Cut(p, "/")
+	if !ok {
+		return "vi/" + p
+	}
+	return dir + "/vi/" + rest
+}
+
+func readVoice(code lang.Code) string {
+	if code == lang.VI {
+		return mustRead(promptsFS, localPath(code, "voice.md"))
+	}
+	return mustRead(voiceFS, "voice.md")
+}
+
+// fsFor trả về FS nhúng chứa đường dẫn gốc p (theo thư mục cấp một).
+func fsFor(p string) embed.FS {
+	switch {
+	case strings.HasPrefix(p, "prompts/"):
+		return promptsFS
+	case strings.HasPrefix(p, "references/"):
+		return referencesFS
+	case strings.HasPrefix(p, "styles/"):
+		return stylesFS
+	}
+	return voiceFS
+}
+
+// baseAssetPaths liệt kê mọi tài nguyên gốc (tiếng Trung) mà bản dịch phải phủ đủ.
+func baseAssetPaths() []string {
+	paths := []string{"voice.md"}
+	for _, root := range []struct {
+		fsys embed.FS
+		dir  string
+	}{{promptsFS, "prompts"}, {referencesFS, "references"}, {stylesFS, "styles"}} {
+		_ = fs.WalkDir(root.fsys, root.dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if d.Name() == "vi" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if strings.HasSuffix(p, ".md") {
+				paths = append(paths, p)
+			}
+			return nil
+		})
+	}
+	return paths
+}
+
+// CheckLanguage xác nhận bộ tài nguyên của ngôn ngữ code có đủ file; thiếu thì
+// trả lỗi liệt kê từng file để người dùng biết cần dịch gì (hoặc đặt language=zh).
+func CheckLanguage(code lang.Code) error {
+	if code != lang.VI {
+		return nil
+	}
+	var missing []string
+	for _, p := range baseAssetPaths() {
+		lp := localPath(code, p)
+		if _, err := fs.Stat(fsFor(p), lp); err != nil {
+			missing = append(missing, "assets/"+lp)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("thiếu %d tài nguyên tiếng Việt (language=vi): %s; hãy dịch các file này hoặc đặt \"language\": \"zh\" trong config",
+			len(missing), strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // voicePlaceholder 是 writer 协议模板中文风段的原位插入点。
@@ -111,11 +210,12 @@ func (b *Bundle) OverrideVoice(raw string) {
 // "后者优先"是给 LLM 的优先级指示而非机械保证;需要机械保证的约束走 rules 层。
 func resolveAppendable(builtin, name string, opts LoadOptions) string {
 	out := builtin
+	h := overrideHeadings[opts.lang()]
 	if s := readOverride(opts.HomeStyleDir, name); s != "" {
-		out += "\n\n## 用户全局文风覆盖（以下要求优先于项目默认）\n\n" + s
+		out += "\n\n" + h.home + "\n\n" + s
 	}
 	if s := readOverride(opts.BookStyleDir, name); s != "" {
-		out += "\n\n## 本书文风覆盖（以下要求优先于以上全部）\n\n" + s
+		out += "\n\n" + h.book + "\n\n" + s
 	}
 	return out
 }
@@ -139,6 +239,9 @@ func loadReferences(style string, opts LoadOptions) tools.References {
 	if style == "" {
 		style = "default"
 	}
+	code := opts.lang()
+	// Che mustRead để danh sách bên dưới giữ nguyên như upstream (dễ merge).
+	mustRead := func(fsys embed.FS, p string) string { return mustRead(fsys, localPath(code, p)) }
 	refs := tools.References{
 		ChapterGuide:      mustRead(referencesFS, "references/chapter-guide.md"),
 		HookTechniques:    mustRead(referencesFS, "references/hook-techniques.md"),
@@ -154,7 +257,7 @@ func loadReferences(style string, opts LoadOptions) tools.References {
 		AntiAITone:        resolveAppendable(mustRead(referencesFS, "references/anti-ai-tone.md"), "anti-ai-tone.md", opts),
 	}
 	if style != "" && style != "default" {
-		genreDir := "references/genres/" + style + "/"
+		genreDir := localPath(code, "references/genres/"+style) + "/"
 		if data, err := referencesFS.ReadFile(genreDir + "style-references.md"); err == nil {
 			refs.StyleReference = string(data)
 		}
@@ -173,7 +276,12 @@ func loadReferences(style string, opts LoadOptions) tools.References {
 	return refs
 }
 
-func loadPrompts() Prompts {
+func loadPrompts() Prompts { return loadPromptsFor(lang.ZH) }
+
+func loadPromptsFor(code lang.Code) Prompts {
+	// Che hai hàm cùng tên để danh sách bên dưới giữ nguyên như upstream (dễ merge).
+	mustRead := func(fsys embed.FS, p string) string { return mustRead(fsys, localPath(code, p)) }
+	WithSimulationGuidance := func(prompt, role string) string { return withSimulationGuidance(code, prompt, role) }
 	return Prompts{
 		ArchitectShort:   WithSimulationGuidance(mustRead(promptsFS, "prompts/architect-short.md"), "architect"),
 		ArchitectLong:    WithSimulationGuidance(mustRead(promptsFS, "prompts/architect-long.md"), "architect"),
@@ -196,7 +304,15 @@ func loadPrompts() Prompts {
 // WithSimulationGuidance 给核心 prompt 追加仿写画像指引。导出供 eval 等外部场景做
 // variant 覆盖时复用，保证覆盖后的 prompt 与 Load 产出的 baseline 等价（同一包装路径）。
 func WithSimulationGuidance(prompt, role string) string {
-	return prompt + "\n\n" + strings.ReplaceAll(simulationGuidance, "{{role}}", role)
+	return withSimulationGuidance(lang.ZH, prompt, role)
+}
+
+func withSimulationGuidance(code lang.Code, prompt, role string) string {
+	g := simulationGuidance
+	if code == lang.VI {
+		g = simulationGuidanceVI
+	}
+	return prompt + "\n\n" + strings.ReplaceAll(g, "{{role}}", role)
 }
 
 // OverridePrompt 用 raw 覆盖 bundle 中指定 prompt 文件对应的角色提示词，并走与 Load
@@ -209,7 +325,7 @@ func (b *Bundle) OverridePrompt(file, raw string) error {
 	if !ok {
 		return fmt.Errorf("不支持覆盖的 prompt 文件: %s（仅核心提示词可覆盖）", file)
 	}
-	wrapped := WithSimulationGuidance(raw, role)
+	wrapped := withSimulationGuidance(b.Language, raw, role)
 	switch file {
 	case "architect-short.md":
 		b.Prompts.ArchitectShort = wrapped
@@ -237,11 +353,24 @@ const simulationGuidance = `## 仿写画像
 
 使用原则：借鉴结构、节奏、钩子、信息释放和吸引读者的手法；不要复制原文句子、人物、地名、专有设定或固定桥段。若 simulation_profile 与用户显式要求冲突，优先服从用户要求。`
 
+const simulationGuidanceVI = `## Hồ sơ phỏng tác
+
+Khi planning_memory hoặc working_memory của novel_context có simulation_profile, bắt buộc coi đó là ràng buộc về hướng phỏng tác của tác phẩm hiện tại. {{role}} cần đọc các mục style, lexicon, plot_design, hook_design, pacing_density, reader_engagement và role_guidance trong đó.
+
+Nguyên tắc sử dụng: học cấu trúc, nhịp độ, móc câu, cách hé lộ thông tin và thủ pháp giữ chân người đọc; không chép câu văn, nhân vật, địa danh, thiết lập riêng hay tình tiết cố định của nguyên tác. Nếu simulation_profile mâu thuẫn với yêu cầu tường minh của người dùng, ưu tiên làm theo người dùng.`
+
+// overrideHeadings là tiêu đề đoạn ghép thêm khi người dùng ghi đè văn phong.
+var overrideHeadings = map[lang.Code]struct{ home, book string }{
+	lang.ZH: {"## 用户全局文风覆盖（以下要求优先于项目默认）", "## 本书文风覆盖（以下要求优先于以上全部）"},
+	lang.VI: {"## Ghi đè văn phong toàn cục của người dùng (các yêu cầu dưới đây ưu tiên hơn mặc định của dự án)", "## Ghi đè văn phong riêng cho cuốn này (các yêu cầu dưới đây ưu tiên hơn tất cả phần trên)"},
+}
+
 // loadStyles 枚举内置风格预设,再按 全局 → 本书 顺序叠加覆盖目录下 styles/*.md
 // (同名整文件替换,新文件名即新增风格;风格是整体声音,不做合并)。
 func loadStyles(opts LoadOptions) map[string]string {
 	styles := make(map[string]string)
-	entries, err := stylesFS.ReadDir("styles")
+	dir := strings.TrimSuffix(localPath(opts.lang(), "styles/"), "/")
+	entries, err := stylesFS.ReadDir(dir)
 	if err != nil {
 		return styles
 	}
@@ -250,7 +379,7 @@ func loadStyles(opts LoadOptions) map[string]string {
 			continue
 		}
 		name := strings.TrimSuffix(e.Name(), ".md")
-		data, err := stylesFS.ReadFile("styles/" + e.Name())
+		data, err := stylesFS.ReadFile(dir + "/" + e.Name())
 		if err != nil {
 			continue
 		}

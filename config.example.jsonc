@@ -112,7 +112,10 @@
   // },
 
   // 写作风格：default / suspense / fantasy / romance。
-  "style": "default"
+  "style": "default",
+
+  // Ngôn ngữ sáng tác: "vi" (tiếng Việt, mặc định) hoặc "zh" (prompt tiếng Trung gốc).
+  "language": "vi"
 
   // 旧版全局上下文窗口，保留作所有模型的回退。优先级低于 models[].context_window，
   // 高于模型注册表和 200k 默认值。仅影响压缩阈值，不改变 API 实际请求长度。
