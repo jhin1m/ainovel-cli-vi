@@ -48,8 +48,8 @@ func legacyCandidate() rules.Candidate {
 	return rules.Candidate{
 		Source: systemDefaultsSource,
 		Structured: rules.Structured{
-			ForbiddenPhrases: slices.Clone(legacyZHDefaults.ForbiddenPhrases),
-			FatigueWords:     maps.Clone(legacyZHDefaults.FatigueWords),
+			ForbiddenPhrases: slices.Clone(legacyZHDefaults().ForbiddenPhrases),
+			FatigueWords:     maps.Clone(legacyZHDefaults().FatigueWords),
 		},
 	}
 }
@@ -78,7 +78,7 @@ func TestGetOrBuild_RelocalizesLegacyZHDefaults(t *testing.T) {
 	}
 	want["bỗng nhiên"] = 1
 	want["仿佛"] = 5 // ngưỡng khác bảng cũ = người dùng ghi đè → giữ
-	for word, limit := range legacyZHDefaults.FatigueWords {
+	for word, limit := range legacyZHDefaults().FatigueWords {
 		if _, isCurrent := cur.FatigueWords[word]; isCurrent || word == "仿佛" {
 			continue
 		}
@@ -127,7 +127,7 @@ func TestGetOrBuild_SameLanguageUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !maps.Equal(snap.Structured.FatigueWords, legacyZHDefaults.FatigueWords) {
+	if !maps.Equal(snap.Structured.FatigueWords, legacyZHDefaults().FatigueWords) {
 		t.Errorf("cùng ngôn ngữ không được đổi snapshot: %+v", snap.Structured.FatigueWords)
 	}
 	if got := readLanguageField(t, st); got != "" {

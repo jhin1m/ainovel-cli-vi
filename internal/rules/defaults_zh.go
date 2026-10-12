@@ -19,6 +19,9 @@ func systemDefaultsZH() Structured {
 	}
 }
 
+// SystemDefaultsZH 返回中文基线的副本，供 userrules 识别并迁移在 zh 下生成的旧快照。
+func SystemDefaultsZH() Structured { return systemDefaultsZH() }
+
 // homeRulesReadmeZH 是 language=zh 时首次引导写入 ~/.ainovel/rules/README.txt 的说明。
 // 刻意用 .txt 后缀而非 .md——扫描只认 .md，这份说明不会被当成规则归一化。
 const homeRulesReadmeZH = `这里放全局写作偏好，跨所有书生效。

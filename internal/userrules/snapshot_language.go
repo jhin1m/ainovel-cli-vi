@@ -100,7 +100,7 @@ func (s *Service) saveSnapshot(snap *rules.Snapshot) error {
 //     (ngưỡng khác nghĩa là người dùng đã ghi đè → giữ), rồi bổ sung bảng mặc định hiện
 //     tại ở mức ưu tiên thấp nhất (không đè từ người dùng đã khai).
 //
-// Chỉ biết bảng mặc định cũ của tiếng Trung (legacyZHDefaults). Chuyển từ vi sang zh thì
+// Chỉ biết bảng mặc định cũ của tiếng Trung (rules.SystemDefaultsZH). Chuyển từ vi sang zh thì
 // không gỡ được bảng vi cũ, chỉ bổ sung bảng hiện tại — từ tiếng Việt không bao giờ khớp
 // văn tiếng Trung nên vô hại.
 func relocalizeDefaults(snap *rules.Snapshot, from lang.Code) bool {
@@ -110,7 +110,7 @@ func relocalizeDefaults(snap *rules.Snapshot, from lang.Code) bool {
 	cur := rules.SystemDefaults().Structured
 	st := &snap.Structured
 
-	if from == lang.ZH && slices.Equal(st.ForbiddenPhrases, legacyZHDefaults.ForbiddenPhrases) {
+	if from == lang.ZH && slices.Equal(st.ForbiddenPhrases, legacyZHDefaults().ForbiddenPhrases) {
 		st.ForbiddenPhrases = slices.Clone(cur.ForbiddenPhrases)
 	}
 
@@ -118,7 +118,7 @@ func relocalizeDefaults(snap *rules.Snapshot, from lang.Code) bool {
 	maps.Copy(fatigue, cur.FatigueWords)
 	for word, limit := range st.FatigueWords {
 		if from == lang.ZH {
-			if old, ok := legacyZHDefaults.FatigueWords[word]; ok && old == limit {
+			if old, ok := legacyZHDefaults().FatigueWords[word]; ok && old == limit {
 				continue
 			}
 		}
@@ -133,3 +133,6 @@ func relocalizeDefaults(snap *rules.Snapshot, from lang.Code) bool {
 
 // isNotExist gói os.IsNotExist cho lỗi đã bọc.
 func isNotExist(err error) bool { return errors.Is(err, os.ErrNotExist) }
+
+// legacyZHDefaults là bảng mặc định tiếng Trung mà snapshot cũ (tạo khi language=zh) đã nhúng.
+func legacyZHDefaults() rules.Structured { return rules.SystemDefaultsZH() }
