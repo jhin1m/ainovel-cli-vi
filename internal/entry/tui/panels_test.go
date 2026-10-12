@@ -23,7 +23,7 @@ func TestRenderTopBarShowsVersion(t *testing.T) {
 
 func TestRenderDetailContentShowsSynopsis(t *testing.T) {
 	out := ansi.Strip(renderDetailContent(host.UISnapshot{Synopsis: "少年在永夜中寻找黎明。"}, 40))
-	if !strings.Contains(out, "简介") || !strings.Contains(out, "少年在永夜中寻找黎明。") {
+	if !strings.Contains(out, "Giới thiệu") || !strings.Contains(out, "少年在永夜中寻找黎明。") {
 		t.Fatalf("detail panel missing synopsis: %q", out)
 	}
 }
@@ -81,7 +81,7 @@ func TestRenderStatusBar(t *testing.T) {
 		BudgetLimitUSD:     5,
 		TotalSavedUSD:      0.12,
 	}, "/tmp/output", 120))
-	for _, want := range []string{"test-model(200K,med)", "↑1.2M", "↓89.3k", "$0.31/$5.00", "省$0.12", "./output"} {
+	for _, want := range []string{"test-model(200K,med)", "↑1.2M", "↓89.3k", "$0.31/$5.00", "tiết kiệm $0.12", "./output"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("状态栏缺少 %q：%q", want, out)
 		}
@@ -144,5 +144,63 @@ func TestRenderDetailContentWrapsCJK(t *testing.T) {
 	joined := strings.ReplaceAll(strings.ReplaceAll(out, "\n", ""), " ", "")
 	if !strings.Contains(joined, "坚持程序正义") {
 		t.Errorf("折行后应保留完整描述，实际输出:\n%s", out)
+	}
+}
+
+// TestSidebarFieldLabelsFitLabelColumn 守护左栏字段标签不超出固定标签列宽（fieldLabelStyle
+// Width(10)）：超宽标签会被 lipgloss 折成两行，把值挤到下一行，窄终端下概览错位。
+// 至少留 1 列与值分隔。
+func TestSidebarFieldLabelsFitLabelColumn(t *testing.T) {
+	snap := host.UISnapshot{
+		RuntimeState:           "running",
+		Phase:                  "writing",
+		Flow:                   "polishing",
+		IsRunning:              true,
+		Layered:                true,
+		CompletedCount:         3,
+		Outline:                []host.OutlineSnapshot{{Chapter: 1}, {Chapter: 2}, {Chapter: 3}, {Chapter: 4}},
+		TotalWordCount:         12345,
+		InProgressChapter:      4,
+		PendingRewrites:        []int{4},
+		RewriteReason:          "x",
+		PendingSteer:           "y",
+		AdvanceMode:            "review",
+		HasAdvanceHold:         true,
+		AdvanceHoldReason:      "z",
+		TotalInputTokens:       100000,
+		TotalOutputTokens:      2000,
+		TotalCostUSD:           0.5,
+		TotalSavedUSD:          0.1,
+		BudgetLimitUSD:         5,
+		OverallCacheCapable:    true,
+		TotalCacheReadTokens:   50000,
+		TotalCacheWriteTokens:  1000,
+		TotalCacheBreaks:       2,
+		OverallRecentSamples:   10,
+		OverallRecentInput:     1000,
+		OverallRecentCacheRead: 500,
+	}
+	labelW := fieldLabelStyle.GetWidth()
+	labels := []string{
+		"Vận hành", "Giai đoạn", "Luồng", "Chế độ", "Đã xong", "Dàn ý", "Tiến độ", "Số chữ",
+		"Hiện tại", "Chờ tiếp", "Hàng đợi", "Lý do", "Chờ xử lý",
+		"Đầu vào", "Đầu ra", "Chi phí", "Tiết kiệm", "Ngân sách",
+		"Hit tổng", "Hit gần10", "Cache đọc", "Cache ghi", "Đứt chuỗi",
+	}
+	for _, flow := range []string{"polishing", "rewriting", ""} {
+		snap.Flow = flow
+		label, _ := inProgressDisplay(snap)
+		labels = append(labels, label)
+	}
+	for _, l := range labels {
+		if w := lipgloss.Width(l); w >= labelW {
+			t.Errorf("字段标签 %q 宽 %d，需 < %d", l, w, labelW)
+		}
+	}
+	out := ansi.Strip(renderStateContent(snap, 40))
+	for _, l := range []string{"Vận hành", "Dàn ý", "Hit gần10", "Cache đọc"} {
+		if !strings.Contains(out, l) {
+			t.Errorf("左栏缺少字段 %q：\n%s", l, out)
+		}
 	}
 }
