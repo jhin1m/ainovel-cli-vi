@@ -24,8 +24,8 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 | 1 | tui | xong | merge b1e96bf, check-han internal/entry 443→0; lưu ý: gợi ý phím bị cắt <120 cột (như bản gốc) |
 | 2 | host | xong | check-han host 728→0; đổi đầu đề xuất bản "Chương N:", nâng version prompt import |
 | 2 | tools | xong | check-han tools 350→0; alias premise tiếng Việt; read_chapter word_count theo WordCount |
-| 2 | rest | đang chạy | worktree ~/projects/ainovel-wt/rest, agent `rest` |
-| 2b | patches: port bản vá quy hoạch kentjuno (dcc09e1 phần domain/tools/store, 998665f, 9b5c138, 7c615ec) | chờ | sau Đợt 2 để tránh đụng file; chỉ port lỗi còn tái hiện |
+| 2 | rest | xong | check-han toàn repo = 0; token ước lượng byte/3 khi vi; userrules dựng lại mặc định khi đổi ngôn ngữ |
+| 2b | patches: port bản vá quy hoạch kentjuno (dcc09e1 phần domain/tools/store, 998665f, 9b5c138, 7c615ec) | đang chạy | sau Đợt 2 để tránh đụng file; chỉ port lỗi còn tái hiện |
 | 3 | check-han=0, docs (README.vi, SYNC, NOTICE), smoke test, push, final-status | chờ | controller |
 
 ## Nhật ký
@@ -37,3 +37,4 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 - prompts DONE_WITH_CONCERNS: các việc ngoài phạm vi đã chuyển: premise heading alias → tools; nhãn "Can thiệp gốc của người dùng" engine.go → host (đã nhắn); guard "tóm tắt quyển/cung" → rest. Bỏ phần kentjuno tự thêm không có trong upstream (wuxia, mục bổ sung chapter-guide...).
 - rules DONE_WITH_CONCERNS: đã merge. Việc treo chuyển: editor.md bảng luật (controller làm xong), userrules snapshot đổi lang + đo độ dài rune ở store/stylestat/ctxpack → rest; host/cocreate.go → host; read_chapter.go word_count → tools.
 - host, tools đã merge + push. Còn lại (model=626, log=39) đều trong phạm vi rest. Smoke sớm run1 đang chạy ở ~/projects/ainovel-smoke/run1 (binary trước khi merge host/tools).
+- rest đã merge; check-han model=0 log=0 asset=0. Ghi chú: userrules lưu "language" trong file snapshot qua wrapper (nếu bị ghi lại mất trường thì relocalize lại, idempotent) — giữ nguyên. Đã bỏ bản sao bảng zh (66944bb). Đợt 2b patches khởi chạy.
