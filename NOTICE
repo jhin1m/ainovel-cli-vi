@@ -1,0 +1,19 @@
+ainovel-cli-vi
+Bản Việt hoá của ainovel-cli.
+
+Copyright voocel và những người đóng góp cho ainovel-cli
+  https://github.com/voocel/ainovel-cli
+  Phát hành theo Apache License 2.0 (xem LICENSE).
+
+Một phần bản dịch prompt, câu chữ giao diện và ý tưởng luật kiểm tra văn bản
+tiếng Việt được tham khảo và chỉnh sửa từ bản Việt hoá của Kent Juno:
+  https://github.com/kentjuno/ainovel-cli
+  Phát hành theo Apache License 2.0.
+
+Các thay đổi trong bản này so với upstream:
+- cấu hình `language` ("vi" mặc định, "zh" giữ hành vi gốc);
+- prompt, tài liệu tham khảo và phong cách tiếng Việt trong assets/*/vi/;
+- chuỗi gửi cho model, giao diện và thông báo dịch sang tiếng Việt;
+- đếm chữ và luật kiểm tra văn bản cho tiếng Việt;
+- scripts/check-han để phát hiện chữ Hán còn sót.
+Lịch sử thay đổi chi tiết xem `git log` của branch `vi`.
