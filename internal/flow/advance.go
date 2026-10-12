@@ -41,13 +41,13 @@ func ResolveAdvanceHold(hold *domain.AdvanceHold, progress *domain.Progress) (Ad
 		return AdvanceHoldKeep, err
 	}
 	if progress == nil {
-		return AdvanceHoldKeep, fmt.Errorf("缺少 Progress，无法解析一次性暂停")
+		return AdvanceHoldKeep, fmt.Errorf("thiếu Progress, không thể phân giải lệnh tạm dừng một lần")
 	}
 	if progress.Phase == domain.PhaseComplete {
 		return AdvanceHoldConsume, nil
 	}
 	if progress.Phase != domain.PhaseWriting {
-		return AdvanceHoldKeep, fmt.Errorf("一次性暂停仅适用于 writing/complete 阶段（当前 %s）", progress.Phase)
+		return AdvanceHoldKeep, fmt.Errorf("tạm dừng một lần chỉ áp dụng cho giai đoạn writing/complete (hiện tại %s)", progress.Phase)
 	}
 	switch hold.After {
 	case domain.AdvanceHoldAtBoundary:
@@ -63,6 +63,6 @@ func ResolveAdvanceHold(hold *domain.AdvanceHold, progress *domain.Progress) (Ad
 		}
 		return AdvanceHoldConsumeAndStop, nil
 	default:
-		return AdvanceHoldKeep, fmt.Errorf("不支持的一次性暂停条件 %q", hold.After)
+		return AdvanceHoldKeep, fmt.Errorf("điều kiện tạm dừng một lần không được hỗ trợ %q", hold.After)
 	}
 }

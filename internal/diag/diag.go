@@ -62,8 +62,8 @@ func Analyze(s *store.Store) Report {
 			Confidence: ConfHigh,
 			AutoLevel:  AutoNone,
 			Target:     "runtime.flow",
-			Title:      fmt.Sprintf("工件加载失败: %s", e),
-			Suggestion: "文件可能损坏或权限不足，相关诊断规则的结果可能不完整。",
+			Title:      fmt.Sprintf("Nạp sản phẩm thất bại: %s", e),
+			Suggestion: "File có thể bị hỏng hoặc thiếu quyền; kết quả của các quy tắc chẩn đoán liên quan có thể không đầy đủ.",
 		})
 	}
 	for _, rule := range allRules {

@@ -6,9 +6,9 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
 // DraftStore 管理章节构思、草稿和终稿。
@@ -119,7 +119,47 @@ func (s *DraftStore) LoadChapterRange(from, to, maxRunes int) (map[int]string, e
 	return result, nil
 }
 
-var dialogueRe = regexp.MustCompile(`"[^"]*"`)
+// dialogueRe bắt lời thoại trong ngoặc kép thẳng "..." (hành vi gốc khi zh);
+// dialogueReVI bắt thêm ngoặc kép cong “...” mà văn tiếng Việt hay dùng.
+var (
+	dialogueRe   = regexp.MustCompile(`"[^"]*"`)
+	dialogueReVI = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
+)
+
+func dialoguePattern() *regexp.Regexp {
+	if lang.IsVI() {
+		return dialogueReVI
+	}
+	return dialogueRe
+}
+
+// dialogueMinLen trả về độ dài tối thiểu (loại trừ) của một câu thoại mẫu:
+// tiếng Việt đo bằng số từ (domain.WordCount), tiếng Trung đo bằng rune.
+func dialogueMinLen() int {
+	if lang.IsVI() {
+		return 2
+	}
+	return 5
+}
+
+// styleAnchorBounds trả về khoảng độ dài [min, max] của đoạn văn làm mốc phong cách,
+// đo bằng domain.WordCount: tiếng Việt 12–70 từ, tiếng Trung 50–300 rune.
+func styleAnchorBounds() (int, int) {
+	if lang.IsVI() {
+		return 12, 70
+	}
+	return 50, 300
+}
+
+// openingQuoteCount đếm số câu thoại mở trong đoạn: zh chỉ đếm ngoặc cong “ (hành vi gốc);
+// vi đếm thêm một nửa số ngoặc thẳng ".
+func openingQuoteCount(para string) int {
+	n := strings.Count(para, "\u201c")
+	if lang.IsVI() {
+		n += strings.Count(para, `"`) / 2
+	}
+	return n
+}
 
 // ExtractDialogue 从已提交章节中提取指定角色的对话片段。
 // maxCompletedChapter 由调用方传入，避免跨域依赖。
@@ -128,6 +168,7 @@ func (s *DraftStore) ExtractDialogue(characterName string, aliases []string, max
 		maxSamples = 5
 	}
 	names := append([]string{characterName}, aliases...)
+	minLen := dialogueMinLen()
 
 	var samples []string
 	var readErrs []error
@@ -155,12 +196,12 @@ func (s *DraftStore) ExtractDialogue(characterName string, aliases []string, max
 			if !found {
 				continue
 			}
-			matches := dialogueRe.FindAllString(para, -1)
+			matches := dialoguePattern().FindAllString(para, -1)
 			for _, m := range matches {
 				if len(samples) >= maxSamples {
 					break
 				}
-				if utf8.RuneCountInString(m) > 5 {
+				if domain.WordCount(m) > minLen {
 					samples = append(samples, characterName+": "+m)
 				}
 			}
@@ -176,6 +217,7 @@ func (s *DraftStore) ExtractStyleAnchors(maxAnchors, maxCompletedChapter int) ([
 		maxAnchors = 5
 	}
 
+	minLen, maxLen := styleAnchorBounds()
 	var anchors []string
 	var readErrs []error
 	for ch := 1; ch <= maxCompletedChapter && len(anchors) < maxAnchors; ch++ {
@@ -193,11 +235,11 @@ func (s *DraftStore) ExtractStyleAnchors(maxAnchors, maxCompletedChapter int) ([
 				break
 			}
 			para = strings.TrimSpace(para)
-			runeCount := utf8.RuneCountInString(para)
-			if runeCount < 50 || runeCount > 300 {
+			length := domain.WordCount(para)
+			if length < minLen || length > maxLen {
 				continue
 			}
-			if strings.Count(para, "\u201c") > 2 {
+			if openingQuoteCount(para) > 2 {
 				continue
 			}
 			anchors = append(anchors, para)

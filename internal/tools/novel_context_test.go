@@ -51,6 +51,7 @@ func TestBuildProgressStatusHidesLayeredCapacityEstimate(t *testing.T) {
 }
 
 func TestContextToolInjectsStyleStats(t *testing.T) {
+	withTestLang(t, lang.ZH) // dữ liệu mẫu tiếng Trung: stylestat dùng luật zh
 	dir := t.TempDir()
 	st := store.NewStore(dir)
 	if err := st.Init(); err != nil {

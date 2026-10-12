@@ -7,6 +7,7 @@ import (
 
 	"github.com/voocel/agentcore"
 	corecontext "github.com/voocel/agentcore/context"
+	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -101,7 +102,7 @@ func (s *StoreSummaryCompactStrategy) apply(_ context.Context, msgs []agentcore.
 		CompactedCount: cut.FirstKeptIndex,
 		KeptCount:      len(toKeep),
 		IsSplitTurn:    cut.IsSplitTurn,
-		SummaryLen:     len([]rune(summary)),
+		SummaryLen:     domain.WordCount(summary),
 		Duration:       time.Millisecond,
 	}
 	if budget.Tokens > budget.Threshold && tokensAfter > budget.Threshold {
@@ -117,8 +118,9 @@ func (s *StoreSummaryCompactStrategy) apply(_ context.Context, msgs []agentcore.
 }
 
 const (
-	storeSummaryPreamble = "以下内容来自小说持久化 store，用于在压缩后恢复写作上下文。"
-	taskHeading          = "## 当前任务\n"
+	storeSummaryPreamble = "Nội dung dưới đây lấy từ store lưu trữ của tiểu thuyết, dùng để khôi phục ngữ cảnh viết sau khi nén."
+	taskHeading          = "## Nhiệm vụ hiện tại\n"
+	legacyTaskHeading    = "## 当前任务\n" //check-han:ok tương thích dữ liệu cũ
 )
 
 // leadingTask 取回协调器下发的任务：首次压缩来自首条 user 消息，之后来自上一份摘要。
@@ -130,9 +132,11 @@ func leadingTask(msgs []agentcore.AgentMessage) string {
 			return first.TextContent()
 		}
 	case corecontext.ContextSummary:
-		if _, rest, ok := strings.Cut(first.Summary, taskHeading); ok {
-			task, _, _ := strings.Cut(rest, "\n## ")
-			return strings.TrimSpace(task)
+		for _, heading := range []string{taskHeading, legacyTaskHeading} {
+			if _, rest, ok := strings.Cut(first.Summary, heading); ok {
+				task, _, _ := strings.Cut(rest, "\n## ")
+				return strings.TrimSpace(task)
+			}
 		}
 	}
 	return ""

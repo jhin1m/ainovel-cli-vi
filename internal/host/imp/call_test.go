@@ -104,7 +104,7 @@ func TestCallStructuredCarriesRawOnSemanticFailure(t *testing.T) {
 	if !errors.As(err, &se) {
 		t.Fatalf("应返回 errSemantic，得 %T：%v", err, err)
 	}
-	if se.Raw != "垃圾输出 not json" || !strings.Contains(se.Error(), "契约违约") {
+	if se.Raw != "垃圾输出 not json" || !strings.Contains(se.Error(), "vi phạm hợp đồng") {
 		t.Fatalf("Raw 应携带最后一次原始响应，得 %q", se.Raw)
 	}
 }

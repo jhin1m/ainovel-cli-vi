@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/voocel/agentcore"
-	corecontext "github.com/voocel/agentcore/context"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -32,7 +30,7 @@ type writerStoreSummaryState struct {
 
 func (s *writerStoreSummaryState) warn(scope string, err error) {
 	if s != nil && err != nil {
-		s.warnings = append(s.warnings, fmt.Sprintf("%s 读取失败: %v", scope, err))
+		s.warnings = append(s.warnings, fmt.Sprintf("đọc %s thất bại: %v", scope, err))
 	}
 }
 
@@ -252,35 +250,35 @@ func writerStoreProgressSection(state *writerStoreSummaryState) map[string]any {
 
 func writerStoreSummarySections(state *writerStoreSummaryState) []writerStoreSection {
 	return []writerStoreSection{
-		{heading: "当前进度", data: writerStoreProgressSection(state)},
-		{heading: "数据告警", data: state.warnings},
-		{heading: "最近章节摘要", data: state.recentSummaries},
-		{heading: "当前章节计划", data: state.chapterPlan},
-		{heading: "当前章节大纲", data: state.currentOutline},
-		{heading: "当前弧摘要", data: state.currentArcSummary},
-		{heading: "当前卷摘要", data: state.currentVolSummary},
-		{heading: "角色快照", data: state.snapshots},
-		{heading: "活跃伏笔", data: state.foreshadow},
-		{heading: "待修审稿问题", data: state.pendingReviews},
-		{heading: "最近时间线", data: state.timeline},
-		{heading: "风格规则", data: state.styleRules},
+		{heading: "Tiến độ hiện tại", data: writerStoreProgressSection(state)},
+		{heading: "Cảnh báo dữ liệu", data: state.warnings},
+		{heading: "Tóm tắt các chương gần đây", data: state.recentSummaries},
+		{heading: "Kế hoạch chương hiện tại", data: state.chapterPlan},
+		{heading: "Dàn ý chương hiện tại", data: state.currentOutline},
+		{heading: "Tóm tắt cung hiện tại", data: state.currentArcSummary},
+		{heading: "Tóm tắt quyển hiện tại", data: state.currentVolSummary},
+		{heading: "Trạng thái nhân vật mới nhất", data: state.snapshots},
+		{heading: "Phục bút đang mở", data: state.foreshadow},
+		{heading: "Vấn đề duyệt cần sửa", data: state.pendingReviews},
+		{heading: "Dòng thời gian gần đây", data: state.timeline},
+		{heading: "Quy tắc văn phong", data: state.styleRules},
 	}
 }
 
 func writerRestoreSections(state *writerStoreSummaryState) []writerStoreSection {
 	return []writerStoreSection{
-		{heading: "当前进度", data: writerStoreProgressSection(state)},
-		{heading: "数据告警", data: state.warnings},
-		{heading: "当前章节计划", data: state.chapterPlan},
-		{heading: "当前章节大纲", data: state.currentOutline},
-		{heading: "待修审稿问题", data: state.pendingReviews},
-		{heading: "角色快照", data: state.snapshots},
-		{heading: "最近章节摘要", data: state.recentSummaries},
-		{heading: "活跃伏笔", data: state.foreshadow},
-		{heading: "当前弧摘要", data: state.currentArcSummary},
-		{heading: "当前卷摘要", data: state.currentVolSummary},
-		{heading: "最近时间线", data: state.timeline},
-		{heading: "风格规则", data: state.styleRules},
+		{heading: "Tiến độ hiện tại", data: writerStoreProgressSection(state)},
+		{heading: "Cảnh báo dữ liệu", data: state.warnings},
+		{heading: "Kế hoạch chương hiện tại", data: state.chapterPlan},
+		{heading: "Dàn ý chương hiện tại", data: state.currentOutline},
+		{heading: "Vấn đề duyệt cần sửa", data: state.pendingReviews},
+		{heading: "Trạng thái nhân vật mới nhất", data: state.snapshots},
+		{heading: "Tóm tắt các chương gần đây", data: state.recentSummaries},
+		{heading: "Phục bút đang mở", data: state.foreshadow},
+		{heading: "Tóm tắt cung hiện tại", data: state.currentArcSummary},
+		{heading: "Tóm tắt quyển hiện tại", data: state.currentVolSummary},
+		{heading: "Dòng thời gian gần đây", data: state.timeline},
+		{heading: "Quy tắc văn phong", data: state.styleRules},
 	}
 }
 
@@ -416,7 +414,7 @@ func appendJSONSection(parts *[]string, heading string, data any, remaining *int
 			return true
 		}
 		text = truncateJSONToTokens(b, *remaining-20)
-		*parts = append(*parts, fmt.Sprintf("## %s\n%s [已截断]", heading, text))
+		*parts = append(*parts, fmt.Sprintf("## %s\n%s [đã cắt bớt]", heading, text))
 		*remaining = 0
 		return true
 	}
@@ -426,8 +424,7 @@ func appendJSONSection(parts *[]string, heading string, data any, remaining *int
 }
 
 func estimateCompactSectionTokens(heading, body string) int {
-	section := fmt.Sprintf("## %s\n%s", heading, body)
-	return corecontext.EstimateTokens(agentcore.UserMsg(section))
+	return estimateTextTokens(fmt.Sprintf("## %s\n%s", heading, body))
 }
 
 func isEmptySummarySection(data any) bool {

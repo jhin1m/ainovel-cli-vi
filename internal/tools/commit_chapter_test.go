@@ -12,6 +12,7 @@ import (
 
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/llmcontract"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -579,6 +580,7 @@ func TestCommitChapterClearsInvalidLegacyRewritePending(t *testing.T) {
 }
 
 func TestCommitChapterRefreshesSharedStyleStatsAfterRewrite(t *testing.T) {
+	withTestLang(t, lang.ZH) // dữ liệu mẫu tiếng Trung: stylestat dùng luật zh
 	s := store.NewStore(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatal(err)

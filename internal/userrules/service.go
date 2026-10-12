@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -32,7 +33,7 @@ func NewService(st *store.Store, model agentcore.ChatModel, opts rules.LoadOptio
 func (s *Service) normalizeOrDegrade(ctx context.Context, source, text string) rules.Candidate {
 	cand, err := s.norm.Normalize(ctx, source, text)
 	if err != nil {
-		slog.Warn("规则归一化失败，降级为原文偏好", "module", "rules", "source", source, "err", err)
+		slog.Warn("chuẩn hoá quy tắc thất bại, hạ cấp thành sở thích nguyên văn", "module", "rules", "source", source, "err", err)
 		return degraded(source, text)
 	}
 	return cand
@@ -49,7 +50,7 @@ func (s *Service) Build(ctx context.Context, startupPrompt string) (*rules.Snaps
 		cands = append(cands, s.normalizeOrDegrade(ctx, "startup_prompt", startupPrompt))
 	}
 	snap := rules.BuildSnapshot(cands)
-	if err := s.store.UserRules.Save(&snap); err != nil {
+	if err := s.saveSnapshot(&snap); err != nil {
 		return nil, err
 	}
 	return &snap, nil
@@ -62,10 +63,24 @@ func (s *Service) GetOrBuild(ctx context.Context) (*rules.Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cur != nil {
-		return cur, nil
+	if cur == nil {
+		return s.Build(ctx, "")
 	}
-	return s.Build(ctx, "")
+	// Snapshot tạo dưới ngôn ngữ khác (vd. bảng từ cấm tiếng Trung cũ khi đang viết tiếng
+	// Việt) sẽ không khớp gì với chính văn → dựng lại phần mặc định theo ngôn ngữ hiện hành.
+	from, err := s.loadSnapshotLanguage()
+	if err != nil && !isNotExist(err) {
+		return nil, err
+	}
+	if err == nil && from != lang.Current() {
+		relocalizeDefaults(cur, from)
+		if err := s.saveSnapshot(cur); err != nil {
+			return nil, err
+		}
+		slog.Info("đã dựng lại quy tắc mặc định theo ngôn ngữ hiện hành", "module", "rules",
+			"from", string(from), "to", string(lang.Current()))
+	}
+	return cur, nil
 }
 
 // AddRuntimeRule 归一化一条运行中长期规则，以最高优先级叠加到当前快照并落盘。
@@ -78,7 +93,7 @@ func (s *Service) AddRuntimeRule(ctx context.Context, text string) (*rules.Snaps
 	}
 	cand := s.normalizeOrDegrade(ctx, "runtime_update", text)
 	merged := rules.OverlaySnapshot(*cur, cand)
-	if err := s.store.UserRules.Save(&merged); err != nil {
+	if err := s.saveSnapshot(&merged); err != nil {
 		return nil, cand, err
 	}
 	return &merged, cand, nil

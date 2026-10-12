@@ -90,7 +90,7 @@ func (s *Store) LoadProjectFormatVersion() (int, error) {
 		return 0, err
 	}
 	if format.Version <= 0 {
-		return 0, fmt.Errorf("项目格式版本无效: %d", format.Version)
+		return 0, fmt.Errorf("phiên bản định dạng dự án không hợp lệ: %d", format.Version)
 	}
 	return format.Version, nil
 }
@@ -98,7 +98,7 @@ func (s *Store) LoadProjectFormatVersion() (int, error) {
 // SaveProjectFormatVersion 在一次迁移全部完成后原子更新项目格式版本。
 func (s *Store) SaveProjectFormatVersion(version int) error {
 	if version <= 0 {
-		return fmt.Errorf("项目格式版本必须大于 0: %d", version)
+		return fmt.Errorf("phiên bản định dạng dự án phải lớn hơn 0: %d", version)
 	}
 	return s.Progress.io.WriteJSON(projectFormatPath, projectFormat{Version: version})
 }
@@ -112,7 +112,7 @@ func (s *Store) CheckConsistency() []string {
 	var warnings []string
 	progress, err := s.Progress.Load()
 	if err != nil {
-		return append(warnings, fmt.Sprintf("progress 读取失败: %v", err))
+		return append(warnings, fmt.Sprintf("đọc progress thất bại: %v", err))
 	}
 	if progress == nil {
 		return warnings
@@ -120,15 +120,15 @@ func (s *Store) CheckConsistency() []string {
 	if n := len(progress.CompletedChapters); n > 0 {
 		lastCh := progress.CompletedChapters[n-1]
 		if text, err := s.Drafts.LoadChapterText(lastCh); err != nil {
-			warnings = append(warnings, fmt.Sprintf("第 %d 章终稿读取失败: %v", lastCh, err))
+			warnings = append(warnings, fmt.Sprintf("đọc bản hoàn chỉnh chương %d thất bại: %v", lastCh, err))
 		} else if text == "" {
-			warnings = append(warnings, fmt.Sprintf("progress 标记第 %d 章已完成，但 chapters/%02d.md 不存在或为空", lastCh, lastCh))
+			warnings = append(warnings, fmt.Sprintf("progress đánh dấu chương %d đã hoàn thành, nhưng chapters/%02d.md không tồn tại hoặc rỗng", lastCh, lastCh))
 		}
 	}
 	if progress.Layered && progress.CurrentVolume > 0 && progress.CurrentArc > 0 {
 		volumes, err := s.Outline.LoadLayeredOutline()
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("分层大纲读取失败: %v", err))
+			warnings = append(warnings, fmt.Sprintf("đọc dàn ý phân tầng thất bại: %v", err))
 		} else if len(volumes) > 0 {
 			found := false
 			for _, v := range volumes {
@@ -144,7 +144,7 @@ func (s *Store) CheckConsistency() []string {
 				break
 			}
 			if !found {
-				warnings = append(warnings, fmt.Sprintf("progress 当前 V%d A%d 在分层大纲中找不到对应条目", progress.CurrentVolume, progress.CurrentArc))
+				warnings = append(warnings, fmt.Sprintf("không tìm thấy mục tương ứng với V%d A%d hiện tại của progress trong dàn ý phân tầng", progress.CurrentVolume, progress.CurrentArc))
 			}
 		}
 	}
@@ -287,11 +287,11 @@ func (s *Store) ExpandNextArc(expansion domain.ArcExpansion) (ArcPosition, error
 		return ArcPosition{}, err
 	}
 	if p == nil {
-		return ArcPosition{}, fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+		return ArcPosition{}, fmt.Errorf("progress chưa được khởi tạo: %w", errs.ErrToolPrecondition)
 	}
 	boundary := checkArcBoundary(volumes, p.LatestCompleted())
 	if boundary == nil || !boundary.IsArcEnd || boundary.nextVolumePos < 0 {
-		return ArcPosition{}, fmt.Errorf("当前进度不在弧末，无下一弧可展开: %w", errs.ErrToolPrecondition)
+		return ArcPosition{}, fmt.Errorf("tiến độ hiện tại chưa ở cuối cung, không có cung kế tiếp để triển khai: %w", errs.ErrToolPrecondition)
 	}
 	position := ArcPosition{Volume: boundary.NextVolume, Arc: boundary.NextArc}
 	volumes, err = s.Outline.expandArcAtUnlocked(volumes, boundary.nextVolumePos, boundary.nextArcPos, expansion)
@@ -356,17 +356,17 @@ func (s *Store) ReviseOutline(fromChapter int, replacement []domain.OutlineEntry
 		return 0, fmt.Errorf("load progress: %w: %w", errs.ErrStoreRead, err)
 	}
 	if p == nil {
-		return 0, fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+		return 0, fmt.Errorf("progress chưa được khởi tạo: %w", errs.ErrToolPrecondition)
 	}
 	if p.Phase == domain.PhaseComplete {
-		return 0, fmt.Errorf("全书已完结，不允许修改大纲: %w", errs.ErrToolPrecondition)
+		return 0, fmt.Errorf("truyện đã hoàn thành, không được sửa dàn ý: %w", errs.ErrToolPrecondition)
 	}
 	protected := p.InProgressChapter
 	if latest := p.LatestCompleted(); latest > protected {
 		protected = latest
 	}
 	if fromChapter <= protected {
-		return 0, fmt.Errorf("第 %d 章已完成或正在写作；大纲修订必须从第 %d 章之后开始: %w",
+		return 0, fmt.Errorf("chương %d đã hoàn thành hoặc đang viết; sửa dàn ý phải bắt đầu sau chương %d: %w",
 			fromChapter, protected, errs.ErrToolPrecondition)
 	}
 

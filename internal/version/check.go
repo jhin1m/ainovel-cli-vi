@@ -98,7 +98,7 @@ func CheckUpdate(ctx context.Context, opts CheckOptions) (*CheckResult, error) {
 		return nil, errors.Join(cacheErr, err)
 	}
 	if rel.TagName == "" {
-		return nil, errors.Join(cacheErr, fmt.Errorf("release 缺少 tag_name"))
+		return nil, errors.Join(cacheErr, fmt.Errorf("release thiếu tag_name"))
 	}
 
 	result, err := newCheckResult(rel.TagName, current, rel.Body, false)

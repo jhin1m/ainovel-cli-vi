@@ -2,6 +2,7 @@ package eval
 
 import (
 	"encoding/json"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,10 @@ import (
 )
 
 func TestCollectReadsStyleUsageAndToolCalls(t *testing.T) {
+	// Dữ liệu mẫu là tiêu đề tiếng Trung → chạy stylestat ở chế độ zh.
+	prevLang := lang.Current()
+	lang.Set(lang.ZH)
+	t.Cleanup(func() { lang.Set(prevLang) })
 	dir := t.TempDir()
 	s := store.NewStore(dir)
 	progress := &domain.Progress{
@@ -96,7 +101,7 @@ func TestCollectFailsLoudWhenCompletedChapterMissing(t *testing.T) {
 		t.Fatalf("save progress: %v", err)
 	}
 	col := Collect(dir, nil)
-	if !containsString(col.LoadErrors, "progress 标记已完成但终稿为空") {
+	if !containsString(col.LoadErrors, "progress đánh dấu đã hoàn thành nhưng bản chốt rỗng") {
 		t.Fatalf("缺终稿应进入 LoadErrors，实际 %v", col.LoadErrors)
 	}
 }

@@ -47,7 +47,7 @@ func prepareRecords(records []domain.ChapterRecord) ([]domain.ChapterRecord, err
 			continue
 		}
 		if err := chapterfacts.Validate(record.Facts); err != nil {
-			return nil, fmt.Errorf("第 %d 章事实无效: %w", record.Chapter, err)
+			return nil, fmt.Errorf("dữ kiện chương %d không hợp lệ: %w", record.Chapter, err)
 		}
 	}
 	return records, nil
@@ -91,26 +91,26 @@ func (p *Projector) Apply(records []domain.ChapterRecord) error {
 
 	for _, summary := range result.summaries {
 		if err := p.store.Summaries.SaveSummary(summary); err != nil {
-			return fmt.Errorf("保存第 %d 章摘要: %w", summary.Chapter, err)
+			return fmt.Errorf("lưu tóm tắt chương %d: %w", summary.Chapter, err)
 		}
 	}
 	if err := p.store.World.SaveTimeline(result.timeline); err != nil {
-		return fmt.Errorf("重建时间线: %w", err)
+		return fmt.Errorf("dựng lại dòng thời gian: %w", err)
 	}
 	if err := p.store.World.SaveForeshadowLedger(result.foreshadow); err != nil {
-		return fmt.Errorf("重建伏笔账本: %w", err)
+		return fmt.Errorf("dựng lại sổ phục bút: %w", err)
 	}
 	if err := p.store.World.SaveRelationships(result.relationships); err != nil {
-		return fmt.Errorf("重建人物关系: %w", err)
+		return fmt.Errorf("dựng lại quan hệ nhân vật: %w", err)
 	}
 	if err := p.store.World.SaveStateChanges(result.stateChanges); err != nil {
-		return fmt.Errorf("重建状态变化: %w", err)
+		return fmt.Errorf("dựng lại thay đổi trạng thái: %w", err)
 	}
 	if err := p.updateProgress(result); err != nil {
 		return err
 	}
 	if err := p.store.World.SaveAuthorRevisionStyle(result.style); err != nil {
-		return fmt.Errorf("保存用户修订风格: %w", err)
+		return fmt.Errorf("lưu văn phong từ chỗ sửa của người dùng: %w", err)
 	}
 	return nil
 }
@@ -141,7 +141,7 @@ func projectWorld(records []domain.ChapterRecord) ([]domain.TimelineEvent, []dom
 			switch update.Action {
 			case "plant":
 				if strings.TrimSpace(update.ID) == "" {
-					return nil, nil, nil, nil, fmt.Errorf("第 %d 章伏笔 plant 缺少 id", chapter)
+					return nil, nil, nil, nil, fmt.Errorf("chương %d: phục bút plant thiếu id", chapter)
 				}
 				if exists {
 					if ledger[idx].Description == "" {
@@ -153,17 +153,17 @@ func projectWorld(records []domain.ChapterRecord) ([]domain.TimelineEvent, []dom
 				ledger = append(ledger, domain.ForeshadowEntry{ID: update.ID, Description: update.Description, PlantedAt: chapter, Status: "planted"})
 			case "advance":
 				if !exists {
-					return nil, nil, nil, nil, fmt.Errorf("第 %d 章推进未知伏笔 %q", chapter, update.ID)
+					return nil, nil, nil, nil, fmt.Errorf("chương %d đẩy tiến phục bút không tồn tại %q", chapter, update.ID)
 				}
 				ledger[idx].Status = "advanced"
 			case "resolve":
 				if !exists {
-					return nil, nil, nil, nil, fmt.Errorf("第 %d 章回收未知伏笔 %q", chapter, update.ID)
+					return nil, nil, nil, nil, fmt.Errorf("chương %d thu hồi phục bút không tồn tại %q", chapter, update.ID)
 				}
 				ledger[idx].Status = "resolved"
 				ledger[idx].ResolvedAt = chapter
 			default:
-				return nil, nil, nil, nil, fmt.Errorf("第 %d 章伏笔操作非法: %q", chapter, update.Action)
+				return nil, nil, nil, nil, fmt.Errorf("chương %d có thao tác phục bút không hợp lệ: %q", chapter, update.Action)
 			}
 		}
 	}
@@ -181,17 +181,17 @@ func projectWorld(records []domain.ChapterRecord) ([]domain.TimelineEvent, []dom
 func (p *Projector) updateProgress(result projection) error {
 	progress, err := p.store.Progress.Load()
 	if err != nil {
-		return fmt.Errorf("读取进度: %w", err)
+		return fmt.Errorf("đọc tiến độ: %w", err)
 	}
 	if progress == nil {
-		return fmt.Errorf("progress 未初始化")
+		return fmt.Errorf("progress chưa được khởi tạo")
 	}
 	progress.ChapterWordCounts = result.wordCounts
 	progress.TotalWordCount = result.totalWords
 	progress.HookHistory = result.hookHistory
 	progress.StrandHistory = result.strandHistory
 	if err := p.store.Progress.Save(progress); err != nil {
-		return fmt.Errorf("更新章节进度投影: %w", err)
+		return fmt.Errorf("cập nhật phép chiếu tiến độ chương: %w", err)
 	}
 	return nil
 }

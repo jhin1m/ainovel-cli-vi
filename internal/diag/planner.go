@@ -29,15 +29,15 @@ func planRule(f Finding) []Action {
 	case "PhaseFlowMismatch":
 		return []Action{
 			{SourceRule: f.Rule, Kind: ActionEmitNotice, Severity: f.Severity, Summary: f.Title, Message: f.Title, Fingerprint: key},
-			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "状态机异常修复", Message: "状态机异常：" + f.Evidence + "。请先检查并修正 progress 的 phase/flow 状态，再继续运行。", Fingerprint: key},
+			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "Sửa lỗi máy trạng thái", Message: "Máy trạng thái bất thường: " + f.Evidence + ". Hãy kiểm tra và sửa trạng thái phase/flow của progress trước, rồi mới chạy tiếp.", Fingerprint: key},
 		}
 	case "OutlineExhausted":
 		return []Action{
-			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "大纲耗尽处理", Message: "已完成章节数达到已规划上限。请优先调用 Architect 展开下一弧或追加新卷，再继续写作。", Fingerprint: key},
+			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "Xử lý dàn ý đã cạn", Message: "Số chương đã hoàn thành đã chạm giới hạn đã lên dàn ý. Hãy ưu tiên gọi Architect triển khai cung truyện kế tiếp hoặc thêm quyển mới, rồi mới viết tiếp.", Fingerprint: key},
 		}
 	case "OrphanedSteer":
 		return []Action{
-			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "消费未处理的用户干预", Message: "存在未消费的用户干预指令，请优先处理 pending steer 后再继续当前任务。", Fingerprint: key},
+			{SourceRule: f.Rule, Kind: ActionEnqueueFollowUp, Severity: f.Severity, Summary: "Xử lý can thiệp người dùng còn tồn", Message: "Còn chỉ thị can thiệp của người dùng chưa được xử lý; hãy ưu tiên xử lý pending steer rồi mới tiếp tục nhiệm vụ hiện tại.", Fingerprint: key},
 		}
 	default:
 		return nil

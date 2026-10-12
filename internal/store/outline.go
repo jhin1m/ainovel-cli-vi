@@ -293,13 +293,13 @@ func (s *OutlineStore) CompletedArcBoundaries(lastCompleted int) ([]ArcBoundary,
 // expandArcAtUnlocked 展开故事顺序中的指定弧，不接受模型提供的结构主键。
 func (s *OutlineStore) expandArcAtUnlocked(volumes []domain.VolumeOutline, volumePos, arcPos int, expansion domain.ArcExpansion) ([]domain.VolumeOutline, error) {
 	if strings.TrimSpace(expansion.Title) == "" {
-		return nil, fmt.Errorf("弧标题不能为空")
+		return nil, fmt.Errorf("tiêu đề cung truyện không được để trống")
 	}
 	if strings.TrimSpace(expansion.Goal) == "" {
-		return nil, fmt.Errorf("弧目标不能为空")
+		return nil, fmt.Errorf("mục tiêu cung truyện không được để trống")
 	}
 	if len(expansion.Chapters) == 0 {
-		return nil, fmt.Errorf("展开弧必须至少包含一章")
+		return nil, fmt.Errorf("cung truyện được triển khai phải có ít nhất một chương")
 	}
 
 	if volumePos < 0 || volumePos >= len(volumes) || arcPos < 0 || arcPos >= len(volumes[volumePos].Arcs) {
@@ -376,13 +376,13 @@ func (s *OutlineStore) reviseFlatTailUnlocked(fromChapter int, replacement []dom
 		return nil, fmt.Errorf("load outline: %w: %w", errs.ErrStoreRead, err)
 	}
 	if fromChapter > len(outline)+1 {
-		return nil, fmt.Errorf("from_chapter=%d 超出大纲末尾 %d: %w",
+		return nil, fmt.Errorf("from_chapter=%d vượt quá cuối dàn ý (chương %d): %w",
 			fromChapter, len(outline), errs.ErrToolPrecondition)
 	}
 	updated := append([]domain.OutlineEntry(nil), outline[:fromChapter-1]...)
 	updated = append(updated, replacement...)
 	if len(updated) == 0 {
-		return nil, fmt.Errorf("修订后大纲不能为空: %w", errs.ErrToolPrecondition)
+		return nil, fmt.Errorf("dàn ý sau khi sửa không được để trống: %w", errs.ErrToolPrecondition)
 	}
 	for i := range updated {
 		updated[i].Chapter = i + 1
@@ -436,14 +436,14 @@ func reviseLayeredTail(volumes []domain.VolumeOutline, fromChapter int, replacem
 		local = len(volumes[lastVolume].Arcs[lastArc].Chapters)
 	}
 	if targetVolume < 0 {
-		return fmt.Errorf("from_chapter=%d 不在已展开大纲范围内", fromChapter)
+		return fmt.Errorf("from_chapter=%d không nằm trong phạm vi dàn ý đã triển khai", fromChapter)
 	}
 
 	arc := &volumes[targetVolume].Arcs[targetArc]
 	updated := append([]domain.OutlineEntry(nil), arc.Chapters[:local]...)
 	updated = append(updated, replacement...)
 	if len(updated) == 0 {
-		return fmt.Errorf("修订后目标弧不能为空")
+		return fmt.Errorf("cung truyện đích sau khi sửa không được để trống")
 	}
 	arc.Chapters = updated
 	arc.EstimatedChapters = 0
@@ -452,10 +452,10 @@ func reviseLayeredTail(volumes []domain.VolumeOutline, fromChapter int, replacem
 
 func validateAppendVolume(vol domain.VolumeOutline) error {
 	if len(vol.Arcs) == 0 {
-		return fmt.Errorf("新卷必须至少包含一个弧")
+		return fmt.Errorf("quyển mới phải có ít nhất một cung truyện")
 	}
 	if !vol.Arcs[0].IsExpanded() {
-		return fmt.Errorf("新卷的首弧必须包含详细章节")
+		return fmt.Errorf("cung đầu tiên của quyển mới phải có danh sách chương chi tiết")
 	}
 	return nil
 }
@@ -497,7 +497,7 @@ func sameVolumePlan(a, b domain.VolumeOutline) bool {
 // SaveCompass 保存终局方向指南针。
 func (s *OutlineStore) SaveCompass(compass domain.StoryCompass) error {
 	if compass.EndingDirection == "" {
-		return fmt.Errorf("ending_direction 不能为空")
+		return fmt.Errorf("ending_direction không được để trống")
 	}
 	return s.io.WriteJSON("meta/compass.json", compass)
 }
@@ -533,23 +533,23 @@ func (s *OutlineStore) LoadFoundationAudit() (*domain.FoundationAudit, error) {
 
 func renderLayeredOutline(volumes []domain.VolumeOutline) string {
 	var b strings.Builder
-	b.WriteString("# 分层大纲\n\n")
+	b.WriteString("# Dàn ý phân tầng\n\n")
 	ch := 1
 	for _, v := range volumes {
-		fmt.Fprintf(&b, "## 第 %d 卷：%s\n\n", v.Index, v.Title)
-		fmt.Fprintf(&b, "**主题**：%s\n\n", v.Theme)
+		fmt.Fprintf(&b, "## Quyển %d: %s\n\n", v.Index, v.Title)
+		fmt.Fprintf(&b, "**Chủ đề**: %s\n\n", v.Theme)
 		for _, a := range v.Arcs {
-			fmt.Fprintf(&b, "### 第 %d 弧：%s\n\n", a.Index, a.Title)
-			fmt.Fprintf(&b, "**目标**：%s\n\n", a.Goal)
+			fmt.Fprintf(&b, "### Cung %d: %s\n\n", a.Index, a.Title)
+			fmt.Fprintf(&b, "**Mục tiêu**: %s\n\n", a.Goal)
 			if !a.IsExpanded() {
-				fmt.Fprintf(&b, "*（待展开，预估 %d 章）*\n\n", a.EstimatedChapters)
+				fmt.Fprintf(&b, "*(chờ triển khai, dự kiến %d chương)*\n\n", a.EstimatedChapters)
 				continue
 			}
 			for _, e := range a.Chapters {
-				fmt.Fprintf(&b, "#### 第 %d 章：%s\n\n", ch, e.Title)
-				fmt.Fprintf(&b, "**核心事件**：%s\n\n", e.CoreEvent)
+				fmt.Fprintf(&b, "#### Chương %d: %s\n\n", ch, e.Title)
+				fmt.Fprintf(&b, "**Sự kiện chính**: %s\n\n", e.CoreEvent)
 				if e.Hook != "" {
-					fmt.Fprintf(&b, "**钩子**：%s\n\n", e.Hook)
+					fmt.Fprintf(&b, "**Móc câu**: %s\n\n", e.Hook)
 				}
 				ch++
 			}
@@ -560,15 +560,15 @@ func renderLayeredOutline(volumes []domain.VolumeOutline) string {
 
 func renderOutline(entries []domain.OutlineEntry) string {
 	var b strings.Builder
-	b.WriteString("# 大纲\n\n")
+	b.WriteString("# Dàn ý\n\n")
 	for _, e := range entries {
-		fmt.Fprintf(&b, "## 第 %d 章：%s\n\n", e.Chapter, e.Title)
-		fmt.Fprintf(&b, "**核心事件**：%s\n\n", e.CoreEvent)
+		fmt.Fprintf(&b, "## Chương %d: %s\n\n", e.Chapter, e.Title)
+		fmt.Fprintf(&b, "**Sự kiện chính**: %s\n\n", e.CoreEvent)
 		if e.Hook != "" {
-			fmt.Fprintf(&b, "**钩子**：%s\n\n", e.Hook)
+			fmt.Fprintf(&b, "**Móc câu**: %s\n\n", e.Hook)
 		}
 		if len(e.Scenes) > 0 {
-			b.WriteString("**场景**：\n")
+			b.WriteString("**Cảnh**:\n")
 			for i, sc := range e.Scenes {
 				fmt.Fprintf(&b, "%d. %s\n", i+1, sc)
 			}
