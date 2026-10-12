@@ -24,6 +24,13 @@ func TestStripChapterTitleHeader(t *testing.T) {
 		{"strip h1 matching chapter title", "# 边村浮生\n\n天还没亮。", "边村浮生", "天还没亮。"},
 		// 首行 h1 但文字不等于本章标题 → 视为正文，保留
 		{"keep h1 not matching title", "# 别的小标题\n正文。", "边村浮生", "# 别的小标题\n正文。"},
+		// 越南文 / 英文章号标题同样识别
+		{"strip h1 vietnamese chapter", "# Chương 12: Đêm mưa\n\nAnh nhìn ra cửa sổ.", "", "Anh nhìn ra cửa sổ."},
+		{"strip h2 vietnamese chapter no title", "## Chương 3\n\nAnh nhìn ra cửa sổ.", "", "Anh nhìn ra cửa sổ."},
+		{"strip vietnamese uppercase hoi roman", "# HỒI IV - Trở về\nNội dung.", "", "Nội dung."},
+		{"strip english chapter", "# Chapter 7. Dawn\nBody.", "", "Body."},
+		{"keep vietnamese non-chapter heading", "# Chương cuối của đời\nNội dung.", "Đêm mưa", "# Chương cuối của đời\nNội dung."},
+		{"keep heading starting with chuong word", "# Chươngtrình\nNội dung.", "", "# Chươngtrình\nNội dung."},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -92,11 +99,11 @@ func TestRenderTXT_TitleAndChapter(t *testing.T) {
 			2: "她推开门。",
 		},
 	)
-	if !strings.HasPrefix(got, "《光斑》\n\n") {
+	if !strings.HasPrefix(got, "光斑\n\n") {
 		t.Errorf("missing book title at start:\n%s", got)
 	}
 	// premise 不进导出：书名后应直接是章节，不夹任何前情提要
-	if !strings.Contains(got, "第 1 章  雨夜归人") {
+	if !strings.Contains(got, "Chương 1: 雨夜归人") {
 		t.Errorf("missing ch1 header")
 	}
 	if !strings.Contains(got, "他望着窗外。") {
@@ -105,7 +112,7 @@ func TestRenderTXT_TitleAndChapter(t *testing.T) {
 	if strings.Contains(got, "# 第 1 章") {
 		t.Errorf("body markdown header not stripped:\n%s", got)
 	}
-	if !strings.Contains(got, "第 2 章  破晓") {
+	if !strings.Contains(got, "Chương 2: 破晓") {
 		t.Errorf("missing ch2 header")
 	}
 }
@@ -118,10 +125,7 @@ func TestRenderTXT_EmptyBookTitleNoTitleLine(t *testing.T) {
 		nil,
 		map[int]string{1: "正文。"},
 	)
-	if strings.Contains(got, "《") {
-		t.Errorf("should not contain book title brackets: %s", got)
-	}
-	if !strings.HasPrefix(got, "第 1 章  雨夜归人") {
+	if !strings.HasPrefix(got, "Chương 1: 雨夜归人") {
 		t.Errorf("expect chapter header at very start: %s", got)
 	}
 }
@@ -139,14 +143,14 @@ func TestRenderTXT_LayeredVolume(t *testing.T) {
 		locs,
 		map[int]string{1: "正文一。", 2: "正文二。"},
 	)
-	if !strings.Contains(got, "第 1 卷  起源") {
+	if !strings.Contains(got, "Quyển 1: 起源") {
 		t.Errorf("missing volume header: %s", got)
 	}
-	if strings.Contains(got, "弧") {
+	if strings.Contains(got, "弧") || strings.Contains(got, "Cung") {
 		t.Errorf("arc divider should never appear: %s", got)
 	}
 	// 卷标题只在第一章前出现一次
-	if strings.Count(got, "第 1 卷") != 1 {
+	if strings.Count(got, "Quyển 1") != 1 {
 		t.Errorf("volume header should appear exactly once: %s", got)
 	}
 }
@@ -158,7 +162,7 @@ func TestRenderTXT_ChapterWithoutTitleFallsBackToNumberOnly(t *testing.T) {
 		nil,
 		map[int]string{5: "正文。"},
 	)
-	if !strings.Contains(got, "第 5 章\n\n") {
-		t.Errorf("expect 'first 5 章' fallback header: %s", got)
+	if !strings.Contains(got, "Chương 5\n\n") {
+		t.Errorf("expect 'Chương 5' fallback header: %s", got)
 	}
 }
