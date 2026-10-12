@@ -46,3 +46,7 @@ refer/
 output*
 workspace/
 ainovel.db
+
+# File điều phối worker (không commit)
+reports/status-*.txt
+reports/task-*.prompt.md
