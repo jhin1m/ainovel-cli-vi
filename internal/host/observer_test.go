@@ -51,10 +51,10 @@ func TestObserverSubagentRetryEventsUpdateSameLinePerAgent(t *testing.T) {
 		t.Fatalf("writer retry events should share ID: %+v", events)
 	}
 	// Summary 不嵌静态延时（UI 依 RetryAt 倒计时）；延时以截止时刻形式携带，静态快照留在 Detail 供日志。
-	if events[1].Agent != "writer" || !strings.Contains(events[1].Summary, "重试 (2/7)") {
+	if events[1].Agent != "writer" || !strings.Contains(events[1].Summary, "Thử lại (2/7)") {
 		t.Fatalf("event = %+v, want writer retry 2/7 without inline delay", events[1])
 	}
-	if events[1].RetryAt.IsZero() || !strings.Contains(events[1].Detail, "重试 (2/7，2s后)") {
+	if events[1].RetryAt.IsZero() || !strings.Contains(events[1].Detail, "Thử lại (2/7, sau 2s)") {
 		t.Fatalf("event = %+v, want RetryAt deadline + static delay in Detail", events[1])
 	}
 	if events[1].Kind != "network" {
@@ -130,13 +130,13 @@ func TestObserverSeparatesModelResponseFromToolExecution(t *testing.T) {
 	if len(events) != 3 {
 		t.Fatalf("events = %d, want MODEL start + two state updates", len(events))
 	}
-	if events[0].Category != "MODEL" || events[0].Summary != "等待模型" || !events[0].Running() {
+	if events[0].Category != "MODEL" || events[0].Summary != "Chờ mô hình" || !events[0].Running() {
 		t.Fatalf("model start = %+v", events[0])
 	}
-	if events[1].ID != events[0].ID || events[1].Summary != "思考中" {
+	if events[1].ID != events[0].ID || events[1].Summary != "Đang suy nghĩ" {
 		t.Fatalf("thinking update = %+v", events[1])
 	}
-	if events[2].ID != events[0].ID || events[2].Summary != "生成 draft_chapter" {
+	if events[2].ID != events[0].ID || events[2].Summary != "Đang tạo draft_chapter" {
 		t.Fatalf("generation update = %+v", events[2])
 	}
 	if len(o.toolStarts) != 0 {
@@ -159,10 +159,10 @@ func TestObserverSeparatesModelResponseFromToolExecution(t *testing.T) {
 		t.Fatalf("events = %d, want MODEL finish + TOOL start/finish", len(events))
 	}
 	modelEnd, toolStart, toolEnd := events[3], events[4], events[5]
-	if modelEnd.ID != events[0].ID || modelEnd.Summary != "模型响应" || modelEnd.FinishedAt.IsZero() {
+	if modelEnd.ID != events[0].ID || modelEnd.Summary != "Mô hình phản hồi" || modelEnd.FinishedAt.IsZero() {
 		t.Fatalf("model end = %+v", modelEnd)
 	}
-	if toolStart.Category != "TOOL" || toolStart.Summary != "draft_chapter(第11章)" || !toolStart.Running() {
+	if toolStart.Category != "TOOL" || toolStart.Summary != "draft_chapter(chương 11)" || !toolStart.Running() {
 		t.Fatalf("tool start = %+v", toolStart)
 	}
 	if toolEnd.ID != toolStart.ID || toolEnd.FinishedAt.IsZero() {

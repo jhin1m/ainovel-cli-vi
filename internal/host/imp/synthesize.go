@@ -20,8 +20,8 @@ const (
 // synthesizePromptVersion 纳入 synthesis InputDigest，改综合 prompt 时递增，否则旧 synthesis 仍被误判有效。
 const (
 	synthesisSchemaVersion  = 3
-	synthesizePromptVersion = "synthesize-v3"
-	rangePromptVersion      = "range-v2" // 纳入 rangeInputDigest，改 Range prompt 时递增，否则旧区间摘要仍被误判有效
+	synthesizePromptVersion = "synthesize-v4"
+	rangePromptVersion      = "range-v3" // 纳入 rangeInputDigest，改 Range prompt 时递增，否则旧区间摘要仍被误判有效
 )
 
 // ImportedArcRange / ImportedVolumeRange：综合只返回卷弧范围，不重复输出所有章节（RFC §10.3）。
@@ -149,15 +149,15 @@ func Synthesize(ctx context.Context, m callModel, bookPrompt, rangePrompt string
 			digests = append(digests, art.Payload)
 			continue
 		}
-		prof.step(ri+1, len(ranges), "区间摘要 %d/%d（第 %d-%d 章）...", ri+1, len(ranges), startCh, endCh)
+		prof.step(ri+1, len(ranges), "Tóm tắt khoảng %d/%d (chương %d-%d)...", ri+1, len(ranges), startCh, endCh)
 		rd, err := callStructured[RangeDigest](ctx, m, rangeContract, rangePrompt, buildRangePayload(rangeFacts), maxTokens, prof, func(d *RangeDigest) error {
 			return validateRangeDigest(d, startCh, endCh, "range digest")
 		})
 		if err != nil {
-			return nil, fmt.Errorf("range %d-%d 综合：%w", startCh, endCh, err)
+			return nil, fmt.Errorf("tổng hợp range %d-%d: %w", startCh, endCh, err)
 		}
 		if err := writeArtifact(w, rel, want, rd); err != nil {
-			return nil, fmt.Errorf("落盘 range digest：%w", err)
+			return nil, fmt.Errorf("lưu range digest: %w", err)
 		}
 		digests = append(digests, rd)
 	}
@@ -192,13 +192,13 @@ func reduceToFit(ctx context.Context, m callModel, rangePrompt string, digests [
 		merged := make([]RangeDigest, 0, len(groups))
 		for gi, g := range groups {
 			startCh, endCh := g[0].StartChapter, g[len(g)-1].EndChapter
-			prof.step(gi+1, len(groups), "归并区间摘要（第 %d 轮 %d/%d，第 %d-%d 章）...",
+			prof.step(gi+1, len(groups), "Gộp tóm tắt khoảng (vòng %d, %d/%d, chương %d-%d)...",
 				round, gi+1, len(groups), startCh, endCh)
 			rd, err := callStructured[RangeDigest](ctx, m, rangeContract, rangePrompt, buildDigestReducePayload(g), maxTokens, prof, func(d *RangeDigest) error {
-				return validateRangeDigest(d, startCh, endCh, "合并区间")
+				return validateRangeDigest(d, startCh, endCh, "khoảng gộp")
 			})
 			if err != nil {
-				return nil, fmt.Errorf("合并区间 %d-%d：%w", startCh, endCh, err)
+				return nil, fmt.Errorf("gộp khoảng %d-%d: %w", startCh, endCh, err)
 			}
 			merged = append(merged, rd)
 		}
@@ -209,10 +209,10 @@ func reduceToFit(ctx context.Context, m callModel, rangePrompt string, digests [
 
 func validateRangeDigest(d *RangeDigest, startChapter, endChapter int, label string) error {
 	if strings.TrimSpace(d.Plot) == "" {
-		return fmt.Errorf("%s plot 为空", label)
+		return fmt.Errorf("%s: plot trống", label)
 	}
 	if d.StartChapter != startChapter || d.EndChapter != endChapter {
-		return fmt.Errorf("%s 章范围 %d-%d 与请求 %d-%d 不符", label, d.StartChapter, d.EndChapter, startChapter, endChapter)
+		return fmt.Errorf("%s: phạm vi chương %d-%d không khớp với yêu cầu %d-%d", label, d.StartChapter, d.EndChapter, startChapter, endChapter)
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func groupDigestsByBudget(digests []RangeDigest, budgetBytes int) [][]RangeDiges
 // buildDigestReducePayload 组装"把若干下层区间摘要合并为一个 RangeDigest"的输入。
 func buildDigestReducePayload(digests []RangeDigest) string {
 	data, _ := json.Marshal(digests)
-	return fmt.Sprintf("请把第 %d-%d 章的多个下层区间摘要合并为一个 RangeDigest（连续区间摘要）。下层摘要：\n%s",
+	return fmt.Sprintf("Hãy gộp nhiều tóm tắt khoảng cấp dưới của chương %d-%d thành một RangeDigest (tóm tắt khoảng liên tiếp). Các tóm tắt cấp dưới:\n%s",
 		digests[0].StartChapter, digests[len(digests)-1].EndChapter, string(data))
 }
 
@@ -255,7 +255,7 @@ func rangeInputDigest(facts []ImportedChapterFacts) string {
 }
 
 func synthesizeBook(ctx context.Context, m callModel, systemPrompt, payload string, n, maxTokens int, prof callProfile) (*BookSynthesis, error) {
-	prof.step(0, 0, "生成全书综合（作品信息/premise/characters/大纲结构）...")
+	prof.step(0, 0, "Đang tổng hợp toàn cuốn (thông tin tác phẩm/premise/characters/cấu trúc dàn ý)...")
 	s, err := callStructured[BookSynthesis](ctx, m, synthesisContract, systemPrompt, buildBookPayload(payload, n), maxTokens, prof, func(s *BookSynthesis) error {
 		return validateSynthesis(s, n)
 	})
@@ -263,40 +263,40 @@ func synthesizeBook(ctx context.Context, m callModel, systemPrompt, payload stri
 		return nil, err
 	}
 	// 回显模型的全书理解：这是导入最核心的语义产出，值得让用户第一时间看见。
-	prof.step(0, 0, "模型概括全书：%s", snippet(s.Premise, 80))
+	prof.step(0, 0, "Mô hình tóm lược toàn cuốn: %s", snippet(s.Premise, 80))
 	return &s, nil
 }
 
 func buildRangePayload(facts []ImportedChapterFacts) string {
-	return fmt.Sprintf("请为第 %d-%d 章生成一个 RangeDigest（连续区间摘要）。逐章事实：\n%s",
+	return fmt.Sprintf("Hãy tạo một RangeDigest (tóm tắt khoảng liên tiếp) cho chương %d-%d. Sự thật theo từng chương:\n%s",
 		facts[0].Chapter, facts[len(facts)-1].Chapter, compactFacts(facts))
 }
 
 func buildBookPayload(inner string, n int) string {
-	return fmt.Sprintf("以下是全书 %d 章的紧凑事实/区间摘要。请生成 BookSynthesis：title、synopsis、premise、characters、world_rules、卷弧范围 structure、compass、planning_tier、story_status。\n\n%s", n, inner)
+	return fmt.Sprintf("Dưới đây là sự thật cô đọng/tóm tắt khoảng của cả cuốn (%d chương). Hãy tạo BookSynthesis: title, synopsis, premise, characters, world_rules, phạm vi quyển/cung truyện structure, compass, planning_tier, story_status.\n\n%s", n, inner)
 }
 
 // validateSynthesis 校验综合结果的结构约束（值域/闭集/范围），不复判文学质量。
 func validateSynthesis(s *BookSynthesis, n int) error {
 	if strings.TrimSpace(s.Synopsis) == "" {
-		return fmt.Errorf("synopsis 为空")
+		return fmt.Errorf("synopsis trống")
 	}
 	if strings.TrimSpace(s.Premise) == "" {
-		return fmt.Errorf("premise 为空")
+		return fmt.Errorf("premise trống")
 	}
 	if len(s.Characters) == 0 {
-		return fmt.Errorf("characters 为空")
+		return fmt.Errorf("characters trống")
 	}
 	if !validPlanningTiers[s.PlanningTier] {
-		return fmt.Errorf("planning_tier 非法：%q", s.PlanningTier)
+		return fmt.Errorf("planning_tier không hợp lệ: %q", s.PlanningTier)
 	}
 	switch s.StoryStatus {
 	case storyOpen, storyClosed, storyUncertain:
 	default:
-		return fmt.Errorf("story_status 非法：%q", s.StoryStatus)
+		return fmt.Errorf("story_status không hợp lệ: %q", s.StoryStatus)
 	}
 	if strings.TrimSpace(s.Compass.EndingDirection) == "" {
-		return fmt.Errorf("compass.ending_direction 为空")
+		return fmt.Errorf("compass.ending_direction trống")
 	}
 	return validateStructure(s.Structure, n)
 }
@@ -304,25 +304,25 @@ func validateSynthesis(s *BookSynthesis, n int) error {
 // validateStructure 校验卷弧范围连续、无重叠、完整覆盖 1..N（RFC §11 / 不变量 5）。
 func validateStructure(structure []ImportedVolumeRange, n int) error {
 	if len(structure) == 0 {
-		return fmt.Errorf("structure 为空")
+		return fmt.Errorf("structure trống")
 	}
 	next := 1
 	for vi, v := range structure {
 		if len(v.Arcs) == 0 {
-			return fmt.Errorf("卷[%d] %q 无弧", vi, v.Title)
+			return fmt.Errorf("quyển[%d] %q không có cung truyện", vi, v.Title)
 		}
 		for ai, a := range v.Arcs {
 			if a.StartChapter != next {
-				return fmt.Errorf("卷[%d]弧[%d] 起点 %d 应为 %d（须连续无缺口）", vi, ai, a.StartChapter, next)
+				return fmt.Errorf("quyển[%d] cung[%d]: điểm bắt đầu %d phải là %d (phải liên tục, không hở)", vi, ai, a.StartChapter, next)
 			}
 			if a.EndChapter < a.StartChapter {
-				return fmt.Errorf("卷[%d]弧[%d] 范围倒置 %d..%d", vi, ai, a.StartChapter, a.EndChapter)
+				return fmt.Errorf("quyển[%d] cung[%d]: phạm vi đảo ngược %d..%d", vi, ai, a.StartChapter, a.EndChapter)
 			}
 			next = a.EndChapter + 1
 		}
 	}
 	if next-1 != n {
-		return fmt.Errorf("卷弧范围覆盖 %d 章，应为 %d 章", next-1, n)
+		return fmt.Errorf("phạm vi quyển/cung truyện phủ %d chương, cần phủ %d chương", next-1, n)
 	}
 	return nil
 }
@@ -373,7 +373,7 @@ func AssembleFoundation(s *BookSynthesis, facts []ImportedChapterFacts, closed b
 			for ch := a.StartChapter; ch <= a.EndChapter; ch++ {
 				f, ok := byChapter[ch]
 				if !ok {
-					return nil, fmt.Errorf("弧范围引用不存在的章 %d", ch)
+					return nil, fmt.Errorf("phạm vi cung truyện tham chiếu chương %d không tồn tại", ch)
 				}
 				arc.Chapters = append(arc.Chapters, domain.OutlineEntry{
 					Chapter: ch, Title: f.Title, CoreEvent: f.CoreEvent, Hook: f.Hook, Scenes: f.Scenes,
@@ -390,11 +390,11 @@ func AssembleFoundation(s *BookSynthesis, facts []ImportedChapterFacts, closed b
 	// FlattenOutline 后章数为 N，且标题与逐章事实一致（RFC §11.5）。
 	flat := domain.FlattenOutline(volumes)
 	if len(flat) != n {
-		return nil, fmt.Errorf("FlattenOutline 章数 %d != %d", len(flat), n)
+		return nil, fmt.Errorf("FlattenOutline: số chương %d != %d", len(flat), n)
 	}
 	for _, e := range flat {
 		if e.Title != byChapter[e.Chapter].Title {
-			return nil, fmt.Errorf("章 %d 标题与逐章事实不一致", e.Chapter)
+			return nil, fmt.Errorf("tiêu đề chương %d không khớp với sự thật từng chương", e.Chapter)
 		}
 	}
 
@@ -422,7 +422,7 @@ func importedBookTitle(fallbackName string) string {
 	name := strings.TrimSuffix(fallbackName, ".txt")
 	name = strings.TrimSuffix(name, ".md")
 	if name == "" {
-		name = "未命名导入"
+		name = "Truyện nhập chưa đặt tên"
 	}
 	return name
 }

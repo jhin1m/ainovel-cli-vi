@@ -98,9 +98,9 @@ func TestAcquireExclusive(t *testing.T) {
 		exclusive  string
 		wantErr    string // 空=期望放行
 	}{
-		{"running", lifecycleRunning, false, "", "运行中"},
-		{"cocreating", lifecyclePaused, true, "", "阶段共创"},
-		{"busy", lifecycleIdle, false, "导入", "进行中"},
+		{"running", lifecycleRunning, false, "", "đang chạy"},
+		{"cocreating", lifecyclePaused, true, "", "đồng sáng tác giai đoạn"},
+		{"busy", lifecycleIdle, false, "nhập truyện", "Đang nhập truyện"},
 		{"idle free", lifecycleIdle, false, "", ""},
 		{"paused free", lifecyclePaused, false, "", ""},
 	}
@@ -108,19 +108,19 @@ func TestAcquireExclusive(t *testing.T) {
 	// 否则导入会与引擎收尾并发写同一 store。
 	drain := newFlagTestHost(lifecyclePaused, false)
 	drain.engine.running = true
-	if err := drain.acquireExclusive("导入"); err == nil {
+	if err := drain.acquireExclusive("nhập truyện"); err == nil {
 		t.Fatal("引擎排水期应拒绝独占作业")
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := newFlagTestHost(c.lc, c.cocreating)
 			h.exclusive = c.exclusive
-			err := h.acquireExclusive("导入")
+			err := h.acquireExclusive("nhập truyện")
 			if c.wantErr == "" {
 				if err != nil {
 					t.Fatalf("应放行，得 %v", err)
 				}
-				if h.exclusive != "导入" {
+				if h.exclusive != "nhập truyện" {
 					t.Fatalf("放行后应登记占用，得 %q", h.exclusive)
 				}
 				h.releaseExclusive()
@@ -132,8 +132,8 @@ func TestAcquireExclusive(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Fatalf("应含 %q，得 %v", c.wantErr, err)
 			}
-			if !strings.Contains(err.Error(), "导入") {
-				t.Errorf("错误文案应带 action %q，得 %v", "导入", err)
+			if !strings.Contains(err.Error(), "nhập truyện") {
+				t.Errorf("错误文案应带 action %q，得 %v", "nhập truyện", err)
 			}
 		})
 	}
@@ -217,7 +217,7 @@ func TestBuildStoryStateSummary_Populated(t *testing.T) {
 	}
 
 	got := buildStoryStateSummary(st)
-	for _, want := range []string{"影之诗", "已完成 3 章", "下一章为第 4 章", "主角登临绝巅", "师门血仇未报", "预计 4-6 卷"} {
+	for _, want := range []string{"影之诗", "đã xong 3 chương", "chương tiếp theo là chương 4", "主角登临绝巅", "师门血仇未报", "预计 4-6 卷"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("摘要应含 %q，实际:\n%s", want, got)
 		}
@@ -250,10 +250,10 @@ func TestBuildStoryStateSummaryUsesDynamicPlanningWording(t *testing.T) {
 	}
 
 	got := buildStoryStateSummary(st)
-	if !strings.Contains(got, "当前已细化 2 章（后续按弧动态规划）") {
+	if !strings.Contains(got, "hiện đã chi tiết hoá 2 chương (phần sau lên kế hoạch động theo cung truyện)") {
 		t.Fatalf("动态规划摘要口径错误:\n%s", got)
 	}
-	if strings.Contains(got, "66") || strings.Contains(got, "规划 2 章") {
+	if strings.Contains(got, "66") || strings.Contains(got, "kế hoạch 2 chương") {
 		t.Fatalf("动态规划摘要不得暗示固定总章数:\n%s", got)
 	}
 }
