@@ -408,7 +408,7 @@ func phaseOf(col Collected) string {
 
 func findingDetail(f diag.Finding) string {
 	if f.Evidence != "" {
-		return f.Title + "（" + f.Evidence + "）"
+		return f.Title + " (" + f.Evidence + ")"
 	}
 	return f.Title
 }

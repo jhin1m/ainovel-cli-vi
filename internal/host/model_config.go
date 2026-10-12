@@ -245,7 +245,7 @@ func (h *Host) ConfigureModels(draft ModelConfigurationDraft) error {
 			continue
 		}
 		if refs := h.modelReferencesLocked(draft.Provider, old.Name); len(refs) > 0 {
-			return fmt.Errorf("mô hình %q vẫn đang được %s tham chiếu, hãy chuyển trong /model trước rồi mới xoá", old.Name, strings.Join(refs, "、"))
+			return fmt.Errorf("mô hình %q vẫn đang được %s tham chiếu, hãy chuyển trong /model trước rồi mới xoá", old.Name, strings.Join(refs, ", "))
 		}
 	}
 

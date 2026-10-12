@@ -55,7 +55,7 @@ func renderEventLine(ev host.Event, width, spinnerFrame int) string {
 			icon = lipgloss.NewStyle().Foreground(colorSuccess).Render("✓")
 		}
 		name := lipgloss.NewStyle().Foreground(colorContext).Bold(true).Render("ARBITER")
-		label := lipgloss.NewStyle().Foreground(colorMuted).Render("（" + truncate(ev.Summary, maxSumW-9) + "）")
+		label := lipgloss.NewStyle().Foreground(colorMuted).Render("(" + truncate(ev.Summary, maxSumW-9) + ")")
 		line := tsStr + " " + icon + " " + name + label
 		if !running {
 			line += durStr

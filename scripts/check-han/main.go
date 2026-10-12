@@ -50,7 +50,9 @@ func main() {
 	root := flag.String("root", ".", "thư mục gốc của repo")
 	verbose := flag.Bool("v", false, "in từng dòng còn chữ Hán")
 	skipLog := flag.Bool("skip-log", false, "không tính literal log vào mã thoát")
+	punct := flag.Bool("punct", false, "liệt kê thêm literal có dấu câu toàn chiều rộng kiểu CJK như （）：，。 (không tính vào mã thoát)")
 	flag.Parse()
+	checkPunct = *punct
 
 	hits, err := scan(*root)
 	if err == nil {
@@ -145,6 +147,11 @@ func inTranslated(rel string) bool {
 	return false
 }
 
+// checkPunct bật báo cáo dấu câu CJK (nhóm "punct", chỉ để tham khảo).
+var checkPunct bool
+
+const cjkPunct = "（）：，。；！？、「」《》【】"
+
 func hasHan(s string) bool {
 	for _, r := range s {
 		if unicode.Is(unicode.Han, r) {
@@ -194,16 +201,20 @@ func scanGo(path, rel string) ([]hit, error) {
 		if u, err := strconv.Unquote(val); err == nil {
 			val = u
 		}
-		if !hasHan(val) {
-			return true
-		}
 		line := fset.Position(lit.Pos()).Line
 		if okLines[line] {
 			return true
 		}
 		kind := "model"
-		if logArgs[lit] {
-			kind = "log"
+		switch {
+		case hasHan(val):
+			if logArgs[lit] {
+				kind = "log"
+			}
+		case checkPunct && strings.ContainsAny(val, cjkPunct):
+			kind = "punct"
+		default:
+			return true
 		}
 		hits = append(hits, hit{file: rel, line: line, kind: kind, text: oneLine(val)})
 		return true
@@ -261,13 +272,13 @@ func oneLine(s string) string {
 }
 
 type fileStat struct {
-	file              string
-	model, log, asset int
+	file                     string
+	model, log, asset, punct int
 }
 
 func report(w *os.File, hits []hit, verbose, skipLog bool) int {
 	stats := map[string]*fileStat{}
-	var totalModel, totalLog, totalAsset int
+	var totalModel, totalLog, totalAsset, totalPunct int
 	for _, h := range hits {
 		st := stats[h.file]
 		if st == nil {
@@ -281,6 +292,9 @@ func report(w *os.File, hits []hit, verbose, skipLog bool) int {
 		case "log":
 			st.log++
 			totalLog++
+		case "punct":
+			st.punct++
+			totalPunct++
 		default:
 			st.asset++
 			totalAsset++
@@ -291,15 +305,15 @@ func report(w *os.File, hits []hit, verbose, skipLog bool) int {
 		list = append(list, st)
 	}
 	sort.Slice(list, func(i, j int) bool {
-		a, b := list[i].model+list[i].asset+list[i].log, list[j].model+list[j].asset+list[j].log
+		a, b := list[i].model+list[i].asset+list[i].log+list[i].punct, list[j].model+list[j].asset+list[j].log+list[j].punct
 		if a != b {
 			return a > b
 		}
 		return list[i].file < list[j].file
 	})
-	fmt.Fprintf(w, "%-6s %-6s %-6s  %s\n", "model", "log", "asset", "file")
+	fmt.Fprintf(w, "%-6s %-6s %-6s %-6s  %s\n", "model", "log", "asset", "punct", "file")
 	for _, st := range list {
-		fmt.Fprintf(w, "%-6d %-6d %-6d  %s\n", st.model, st.log, st.asset, st.file)
+		fmt.Fprintf(w, "%-6d %-6d %-6d %-6d  %s\n", st.model, st.log, st.asset, st.punct, st.file)
 	}
 	if verbose {
 		fmt.Fprintln(w)
@@ -309,6 +323,9 @@ func report(w *os.File, hits []hit, verbose, skipLog bool) int {
 	}
 	fmt.Fprintf(w, "\nTỔNG: model=%d log=%d asset=%d (gửi cho model = model+asset = %d)\n",
 		totalModel, totalLog, totalAsset, totalModel+totalAsset)
+	if checkPunct {
+		fmt.Fprintf(w, "Dấu câu CJK (tham khảo, không tính mã thoát): punct=%d\n", totalPunct)
+	}
 	bad := totalModel + totalAsset
 	if !skipLog {
 		bad += totalLog

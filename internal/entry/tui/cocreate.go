@@ -168,7 +168,7 @@ func (s *cocreateState) appendSuggestion(index int, current string) (string, boo
 		if strings.TrimSpace(current) != "" {
 			return "", false
 		}
-	} else if current != strings.Join(s.selectedSuggestions, "；") {
+	} else if current != strings.Join(s.selectedSuggestions, "; ") {
 		s.resetSuggestionInput()
 		return "", false
 	}
@@ -181,7 +181,7 @@ func (s *cocreateState) appendSuggestion(index int, current string) (string, boo
 	}
 
 	s.selectedSuggestions = append(s.selectedSuggestions, suggestion)
-	return strings.Join(s.selectedSuggestions, "；"), true
+	return strings.Join(s.selectedSuggestions, "; "), true
 }
 
 func (s *cocreateState) resetSuggestionInput() {

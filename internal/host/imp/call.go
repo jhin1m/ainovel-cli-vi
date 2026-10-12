@@ -93,7 +93,7 @@ func snippet(s string, max int) string {
 func briefErr(err error) string {
 	s := err.Error()
 	if d := modelErrDetail(err); d != "" {
-		s = d + "：" + s
+		s = d + ": " + s
 	}
 	return snippet(s, 100)
 }

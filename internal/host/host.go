@@ -679,7 +679,7 @@ func (h *Host) doIntervention(text string, restart bool) error {
 		// 已当面告知 → 清除 pending(否则下次 Resume 会自动重放同一条失败干预)。
 		h.emitEvent(newInterventionFailureEvent(derr))
 		if err := clearPending(); err != nil {
-			return fmt.Errorf("%v；%w", derr, err)
+			return fmt.Errorf("%v; %w", derr, err)
 		}
 		return derr
 	}
@@ -1303,7 +1303,7 @@ func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 		for _, c := range chars {
 			label := c.Name
 			if c.Role != "" {
-				label += "（" + c.Role + "）"
+				label += " (" + c.Role + ")"
 			}
 			snap.Characters = append(snap.Characters, label)
 		}
@@ -1318,7 +1318,7 @@ func (h *Host) fillDetails(snap *UISnapshot, progress *domain.Progress) {
 		for _, e := range recent {
 			label := e.Name
 			if e.BriefRole != "" {
-				label += "（" + e.BriefRole + "）"
+				label += " (" + e.BriefRole + ")"
 			}
 			snap.RecentSupporting = append(snap.RecentSupporting, label)
 		}

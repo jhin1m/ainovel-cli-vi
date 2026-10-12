@@ -165,7 +165,7 @@ func dispatchSummary(agent, task string) string {
 	if firstLine == "" {
 		return agent
 	}
-	return agent + "（" + utils.TruncateRunes(firstLine, 30) + "）"
+	return agent + " (" + utils.TruncateRunes(firstLine, 30) + ")"
 }
 
 func dispatchDetail(task, reason string) string {
