@@ -21,8 +21,8 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 | 0 | scripts/check-han | xong | baseline: reports/check-han-baseline.txt (model=2109 log=93 asset thiếu 39) |
 | 1 | prompts | đang chạy | worktree ~/projects/ainovel-wt/prompts, branch vi-prompts, agent herdr `prompts` |
 | 1 | rules + domain | đang chạy | worktree ~/projects/ainovel-wt/rules, branch vi-rules, agent herdr `rules` |
-| 1 | tui | đang chạy | worktree ~/projects/ainovel-wt/tui, branch vi-tui, agent herdr `tui` |
-| 2 | host | chờ | worker |
+| 1 | tui | xong | merge b1e96bf, check-han internal/entry 443→0; lưu ý: gợi ý phím bị cắt <120 cột (như bản gốc) |
+| 2 | host | đang chạy | worktree ~/projects/ainovel-wt/host, agent `host` |
 | 2 | tools | chờ | worker |
 | 2 | rest | chờ | worker |
 | 2b | patches: port bản vá quy hoạch kentjuno (dcc09e1 phần domain/tools/store, 998665f, 9b5c138, 7c615ec) | chờ | sau Đợt 2 để tránh đụng file; chỉ port lỗi còn tái hiện |
@@ -33,3 +33,4 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 - Prompt worker lưu ở ~/projects/ainovel-wt/_prompts/ (common.md + task-<x>.md), khởi chạy bằng launch.sh <task> <pane> <hướng>.
 - D6. Bản vá quy hoạch kentjuno tách thành việc riêng `patches` sau Đợt 2 (chúng trải qua domain/tools/store/flow — chạy song song sẽ xung đột với worker dịch chuỗi).
 - 2026-10-12: Đợt 0 xong, đã push. Đợt 1 khởi chạy 3 worker.
+- tui DONE_WITH_CONCERNS (chỉ quan sát), đã merge + push. host khởi chạy sớm (không đụng file Đợt 1). tools chờ rules merge (rules được sửa commit_chapter.go, novel_context_builders.go).
