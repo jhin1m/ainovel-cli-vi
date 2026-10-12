@@ -57,6 +57,11 @@ func (s Structured) IsEmpty() bool {
 //	forbidden_chars 出现             -> Error
 //	forbidden_phrases 出现           -> Error
 //	fatigue_words 超阈值             -> Warning
+//
+// 内置 Lint（不受用户规则影响）：
+//
+//	markdown_residue / non_cjk_fragments(zh) / technical_residue / broken_word / repeated_sentence -> Warning
+//	cjk_leak / english_residue / self_duplication / copied_previous_chapter（vi）                -> Error
 type Severity string
 
 const (

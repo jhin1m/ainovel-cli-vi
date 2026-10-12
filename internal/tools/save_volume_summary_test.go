@@ -3,12 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
 
@@ -58,7 +60,7 @@ func TestSaveVolumeSummaryRejectsNonDueVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := NewSaveVolumeSummaryTool(s).Execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "聚合写入目标不匹配") {
+	if _, err := NewSaveVolumeSummaryTool(s).Execute(context.Background(), args); !errors.Is(err, errs.ErrToolConflict) || !strings.Contains(err.Error(), "volume=2") {
 		t.Fatalf("expected non-due volume rejection, got %v", err)
 	}
 	if summary, err := s.Summaries.LoadVolumeSummary(2); err != nil || summary != nil {

@@ -73,21 +73,21 @@ func (s *BudgetSentinel) OnCost(total float64) {
 	}
 	if prev := s.lastTotal.Swap(math.Float64bits(total)); total == math.Float64frombits(prev) {
 		if s.zeroStreak.Add(1) >= blindZeroStreak && s.blindWarned.CompareAndSwap(false, true) {
-			s.report("warn", fmt.Sprintf("预算盲区: 连续记账但累计成本停在 $%.2f 不再增长（当前模型注册表无价且 provider 未自报 cost，或为免费模型）——预算上限不会触发", total))
+			s.report("warn", fmt.Sprintf("Điểm mù ngân sách: ghi sổ liên tục nhưng chi phí cộng dồn đứng yên ở $%.2f (bảng giá mô hình hiện tại không có giá và provider không tự báo cost, hoặc là mô hình miễn phí) — giới hạn ngân sách sẽ không kích hoạt", total))
 		}
 	} else {
 		s.zeroStreak.Store(0)
 	}
 	if total >= s.limit*s.warnRatio && s.state.CompareAndSwap(budgetNormal, budgetWarned) {
-		s.report("warn", fmt.Sprintf("预算告警: 已花费 $%.2f，达到预算 $%.2f 的 %.0f%%", total, s.limit, s.warnRatio*100))
+		s.report("warn", fmt.Sprintf("Cảnh báo ngân sách: đã tiêu $%.2f trên ngân sách $%.2f, chạm ngưỡng %.0f%%", total, s.limit, s.warnRatio*100))
 	}
 	if total >= s.limit && s.state.CompareAndSwap(budgetWarned, budgetStopPending) {
 		if s.hardStop {
-			s.report("error", fmt.Sprintf("预算用尽: 已花费 $%.2f，超出预算 $%.2f，立即停机", total, s.limit))
+			s.report("error", fmt.Sprintf("Hết ngân sách: đã tiêu $%.2f, vượt ngân sách $%.2f, dừng máy ngay", total, s.limit))
 			s.stop(total)
 			return
 		}
-		s.report("error", fmt.Sprintf("预算用尽: 已花费 $%.2f，超出预算 $%.2f，将在当前子代理任务结束后停机", total, s.limit))
+		s.report("error", fmt.Sprintf("Hết ngân sách: đã tiêu $%.2f, vượt ngân sách $%.2f, sẽ dừng máy sau khi tác vụ subagent hiện tại kết thúc", total, s.limit))
 	}
 }
 
@@ -113,7 +113,7 @@ func (s *BudgetSentinel) HandleBoundary() bool {
 
 func (s *BudgetSentinel) stop(total float64) {
 	if s.state.CompareAndSwap(budgetStopPending, budgetStopped) {
-		s.abort(fmt.Sprintf("预算停机: 已花费 $%.2f，超出预算 $%.2f；上调 budget.book_usd 后可恢复续跑", total, s.limit))
+		s.abort(fmt.Sprintf("Dừng do ngân sách: đã tiêu $%.2f, vượt ngân sách $%.2f; nâng budget.book_usd lên rồi có thể tiếp tục chạy", total, s.limit))
 	}
 }
 
@@ -124,7 +124,7 @@ func (s *BudgetSentinel) Refuse() error {
 		return nil
 	}
 	if cost := s.costNow(); cost >= s.limit {
-		return fmt.Errorf("本书已花费 $%.2f，达到预算上限 $%.2f；请上调配置 budget.book_usd 后重试", cost, s.limit)
+		return fmt.Errorf("Truyện này đã tiêu $%.2f, chạm giới hạn ngân sách $%.2f; hãy nâng cấu hình budget.book_usd rồi thử lại", cost, s.limit)
 	}
 	return nil
 }

@@ -53,7 +53,7 @@ func appendForbiddenPhrases(vs []Violation, text string, list []string) []Violat
 		if ph == "" {
 			continue
 		}
-		n := strings.Count(text, ph)
+		n := countPhrase(text, ph)
 		if n == 0 {
 			continue
 		}
@@ -74,7 +74,7 @@ func appendFatigueWords(vs []Violation, text string, m map[string]int) []Violati
 		if word == "" || limit <= 0 {
 			continue
 		}
-		n := strings.Count(text, word)
+		n := countPhrase(text, word)
 		if n <= limit {
 			continue
 		}

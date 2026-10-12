@@ -221,7 +221,7 @@ func (o *observer) persistEvent(ev Event) {
 		Summary:  ev.Summary,
 		Payload:  ev,
 	}); err != nil {
-		slog.Warn("运行事件持久化失败", "module", "observer", "category", ev.Category, "err", err)
+		slog.Warn("lưu sự kiện chạy thất bại", "module", "observer", "category", ev.Category, "err", err)
 	}
 }
 

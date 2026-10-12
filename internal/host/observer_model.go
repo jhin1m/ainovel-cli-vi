@@ -24,7 +24,7 @@ func (o *observer) startModelResponse(agent string) {
 		return
 	}
 	now := time.Now()
-	call := &activeCall{id: nextEventID(), start: now, summary: "等待模型", depth: 1}
+	call := &activeCall{id: nextEventID(), start: now, summary: "Chờ mô hình", depth: 1}
 	o.modelStarts[agent] = call
 	o.emitAndLog(Event{
 		ID:       call.id,
@@ -60,7 +60,7 @@ func (o *observer) finishModelResponse(agent string) {
 		return
 	}
 	delete(o.modelStarts, agent)
-	call.summary = "模型响应"
+	call.summary = "Mô hình phản hồi"
 	// MODEL 是实时观测事件，只写日志并投递 UI，不进入 runtime queue。
 	o.emitEv(Event{
 		ID:         call.id,

@@ -95,7 +95,7 @@ func publishFoundation(st *store.Store, f *Foundation) error {
 		return fmt.Errorf("load progress：%w", err)
 	}
 	if p == nil {
-		return fmt.Errorf("load progress：progress 未初始化")
+		return fmt.Errorf("load progress: progress chưa khởi tạo")
 	}
 	if p.Phase != domain.PhaseWriting && p.Phase != domain.PhaseComplete {
 		if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
@@ -114,38 +114,38 @@ func checkFoundationConflicts(st *store.Store, f *Foundation) error {
 	wantBook := f.Book.Normalized()
 	book, err := st.Book.Load()
 	if err != nil {
-		return fmt.Errorf("读取正式 book：%w", err)
+		return fmt.Errorf("đọc book chính thức: %w", err)
 	}
 	if book != nil && !jsonEqual(book, wantBook) {
-		return fmt.Errorf("正式 book 与导入综合冲突（已存在不同版本），拒绝覆盖")
+		return fmt.Errorf("book chính thức xung đột với kết quả tổng hợp khi nhập (đã có phiên bản khác), từ chối ghi đè")
 	}
 	cur, err := st.Outline.LoadPremise()
 	if err != nil {
-		return fmt.Errorf("读取正式 premise：%w", err)
+		return fmt.Errorf("đọc premise chính thức: %w", err)
 	}
 	if cur != "" && cur != f.Premise {
-		return fmt.Errorf("正式 premise 与导入综合冲突（已存在不同版本），拒绝覆盖")
+		return fmt.Errorf("premise chính thức xung đột với kết quả tổng hợp khi nhập (đã có phiên bản khác), từ chối ghi đè")
 	}
 	chars, err := st.Characters.Load()
 	if err != nil {
-		return fmt.Errorf("读取正式 characters：%w", err)
+		return fmt.Errorf("đọc characters chính thức: %w", err)
 	}
 	if len(chars) > 0 && !jsonEqual(chars, f.Characters) {
-		return fmt.Errorf("正式 characters 与导入综合冲突（已存在不同版本），拒绝覆盖")
+		return fmt.Errorf("characters chính thức xung đột với kết quả tổng hợp khi nhập (đã có phiên bản khác), từ chối ghi đè")
 	}
 	rules, err := st.World.LoadWorldRules()
 	if err != nil {
-		return fmt.Errorf("读取正式 world_rules：%w", err)
+		return fmt.Errorf("đọc world_rules chính thức: %w", err)
 	}
 	if len(rules) > 0 && !jsonEqual(rules, f.WorldRules) {
-		return fmt.Errorf("正式 world_rules 与导入综合冲突（已存在不同版本），拒绝覆盖")
+		return fmt.Errorf("world_rules chính thức xung đột với kết quả tổng hợp khi nhập (đã có phiên bản khác), từ chối ghi đè")
 	}
 	layered, err := st.Outline.LoadLayeredOutline()
 	if err != nil {
-		return fmt.Errorf("读取正式 layered_outline：%w", err)
+		return fmt.Errorf("đọc layered_outline chính thức: %w", err)
 	}
 	if len(layered) > 0 && !jsonEqual(layered, f.Volumes) {
-		return fmt.Errorf("正式 layered_outline 与导入综合冲突（已存在不同版本），拒绝覆盖")
+		return fmt.Errorf("layered_outline chính thức xung đột với kết quả tổng hợp khi nhập (đã có phiên bản khác), từ chối ghi đè")
 	}
 	return nil
 }
@@ -239,28 +239,28 @@ func isPublished(st *store.Store, expected int) (bool, error) {
 	}
 	book, err := st.Book.Load()
 	if err != nil {
-		return false, fmt.Errorf("读取正式 book: %w", err)
+		return false, fmt.Errorf("đọc book chính thức: %w", err)
 	}
 	if book == nil {
 		return false, nil
 	}
 	p, err := st.Outline.LoadPremise()
 	if err != nil {
-		return false, fmt.Errorf("读取正式 premise: %w", err)
+		return false, fmt.Errorf("đọc premise chính thức: %w", err)
 	}
 	if p == "" {
 		return false, nil
 	}
 	o, err := st.Outline.LoadOutline()
 	if err != nil {
-		return false, fmt.Errorf("读取正式 outline: %w", err)
+		return false, fmt.Errorf("đọc outline chính thức: %w", err)
 	}
 	if len(o) < expected {
 		return false, nil
 	}
 	prog, err := st.Progress.Load()
 	if err != nil {
-		return false, fmt.Errorf("读取正式 progress: %w", err)
+		return false, fmt.Errorf("đọc progress chính thức: %w", err)
 	}
 	return prog != nil && len(prog.CompletedChapters) >= expected, nil
 }

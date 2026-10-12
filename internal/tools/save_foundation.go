@@ -24,9 +24,9 @@ func NewSaveFoundationTool(store *store.Store) *SaveFoundationTool {
 
 func (t *SaveFoundationTool) Name() string { return "save_foundation" }
 func (t *SaveFoundationTool) Description() string {
-	return "保存小说基础设定（premise/outline/characters/world_rules/compass 等）。**这是这些设定的持久化入口**：未经工具调用保存的内容不会进入 store，只在消息里输出 Markdown/JSON 等于丢失。type 可选 premise / outline / layered_outline / characters / world_rules / append_volume / update_compass / complete_book。premise 时 content 必须是 Markdown 字符串；其他类型 content 优先直接传 JSON 数组或对象。append_volume 追加新卷（content 为不带卷弧 index 的 VolumeOutline JSON，序号由系统生成；顶层带 \"final\": true 即宣告收官卷——全书在该卷收束，所有章节写完后自动完结，无需再调 complete_book）；update_compass 更新终局方向（content 为 StoryCompass JSON）；complete_book 宣告全书完结（content 传空对象 {}，直接推 Phase=Complete；工具会校验：大纲内章节已全部写完、无返工队列、compass 无未收束 open_threads——确认长线已收束须先 update_compass 清空 open_threads 落盘，想提前收束用 append_volume 的 final 收官卷）。append_volume / complete_book 必须带 reason 参数（一句话判定理由，对照完结判定清单，记入裁定审计）。scale 可选，仅允许 short / mid / long。"
+	return "Lưu thiết lập nền của tiểu thuyết (premise/outline/characters/world_rules/compass...). **Đây là lối lưu duy nhất cho các thiết lập này**: nội dung không lưu qua công cụ sẽ không vào store, chỉ in Markdown/JSON trong tin nhắn là coi như mất. type chọn một trong premise / outline / layered_outline / characters / world_rules / append_volume / update_compass / complete_book. Với premise, content phải là chuỗi Markdown; các loại khác nên truyền thẳng mảng hoặc đối tượng JSON. append_volume thêm quyển mới (content là VolumeOutline JSON không kèm index quyển/cung, số thứ tự do hệ thống sinh; đặt \"final\": true ở cấp ngoài cùng là tuyên bố quyển kết — toàn truyện khép lại ở quyển này, viết xong mọi chương sẽ tự hoàn kết, không cần gọi complete_book); update_compass cập nhật hướng kết cục (content là StoryCompass JSON); complete_book tuyên bố hoàn kết toàn truyện (content truyền đối tượng rỗng {}, đẩy thẳng Phase=Complete; công cụ sẽ kiểm tra: mọi chương trong dàn ý đã viết xong, không còn hàng đợi viết lại, compass không còn open_threads chưa khép — đã xác nhận khép hết tuyến dài thì phải update_compass xoá trống open_threads và lưu trước; muốn khép sớm thì dùng quyển kết final của append_volume). append_volume / complete_book bắt buộc có tham số reason (một câu lý do phán định, đối chiếu Danh sách phán định kết thúc, được ghi vào nhật ký thẩm định phán quyết). scale tuỳ chọn, chỉ nhận short / mid / long."
 }
-func (t *SaveFoundationTool) Label() string { return "保存设定" }
+func (t *SaveFoundationTool) Label() string { return "Lưu thiết lập" }
 
 // 写工具（跨域更新 Outline/Progress/Characters），禁止并发。
 func (t *SaveFoundationTool) ReadOnly(_ json.RawMessage) bool        { return false }
@@ -34,12 +34,12 @@ func (t *SaveFoundationTool) ConcurrencySafe(_ json.RawMessage) bool { return fa
 
 func (t *SaveFoundationTool) Schema() map[string]any {
 	return schema.Object(
-		schema.Property("type", schema.Enum("设定类型", "premise", "outline", "layered_outline", "characters", "world_rules", "append_volume", "update_compass", "complete_book")).Required(),
+		schema.Property("type", schema.Enum("Loại thiết lập", "premise", "outline", "layered_outline", "characters", "world_rules", "append_volume", "update_compass", "complete_book")).Required(),
 		schema.Property("content", map[string]any{
-			"description": "内容。premise 传 Markdown 字符串；其他类型直接传 JSON 数组或对象即可，也兼容传 JSON 字符串。",
+			"description": "Nội dung. premise truyền chuỗi Markdown; các loại khác truyền thẳng mảng hoặc đối tượng JSON, cũng chấp nhận chuỗi JSON.",
 		}).Required(),
-		schema.Property("scale", schema.Enum("规划级别", "short", "mid", "long")),
-		schema.Property("reason", schema.String("卷末判定理由（append_volume / complete_book 时必填）：对照完结判定清单，一句话说明为何续卷、宣告收官或完结")),
+		schema.Property("scale", schema.Enum("Quy mô kế hoạch", "short", "mid", "long")),
+		schema.Property("reason", schema.String("Lý do phán định cuối quyển (bắt buộc với append_volume / complete_book): đối chiếu Danh sách phán định kết thúc, một câu nêu vì sao viết tiếp quyển, tuyên bố quyển kết hay hoàn kết")),
 	)
 }
 
@@ -77,11 +77,11 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		switch progress.Phase {
 		case domain.PhaseWriting:
 			return nil, fmt.Errorf(
-				"写作阶段禁止使用 %s 全量覆盖大纲。请使用 revise_outline 修订未发生章节、expand_next_arc 展开下一骨架弧，或 append_volume 追加新卷: %w",
+				"Giai đoạn viết cấm dùng %s để ghi đè toàn bộ dàn ý. Hãy dùng revise_outline để sửa các chương chưa diễn ra, expand_next_arc để triển khai cung khung tiếp theo, hoặc append_volume để thêm quyển mới: %w",
 				a.Type, errs.ErrToolPrecondition)
 		case domain.PhaseComplete:
 			return nil, fmt.Errorf(
-				"全书已完结，禁止使用 %s 全量覆盖大纲。请先重开作品，再使用受保护的大纲修订或续写操作: %w",
+				"Toàn truyện đã hoàn kết, cấm dùng %s để ghi đè toàn bộ dàn ý. Hãy mở lại tác phẩm trước, rồi dùng thao tác sửa dàn ý hoặc viết tiếp có bảo vệ: %w",
 				a.Type, errs.ErrToolPrecondition)
 		}
 	}
@@ -96,7 +96,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 	// 续卷失当只能翻会话日志排障。事实快照取判定时刻（变更落盘前）的进度。
 	volumeEnd := a.Type == "append_volume" || a.Type == "complete_book"
 	if volumeEnd && strings.TrimSpace(a.Reason) == "" {
-		return nil, fmt.Errorf("%s 必须带 reason 参数：对照完结判定清单，一句话说明本次为何续卷、宣告收官或完结: %w", a.Type, errs.ErrToolArgs)
+		return nil, fmt.Errorf("%s bắt buộc có tham số reason: đối chiếu Danh sách phán định kết thúc, một câu nêu vì sao lần này viết tiếp quyển, tuyên bố quyển kết hay hoàn kết: %w", a.Type, errs.ErrToolArgs)
 	}
 	var volumeEndFacts json.RawMessage
 	if volumeEnd {
@@ -216,7 +216,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			return nil, fmt.Errorf("load progress: %w: %w", errs.ErrStoreRead, err)
 		}
 		if p != nil && p.Phase == domain.PhaseComplete {
-			return nil, fmt.Errorf("全书已完结（phase=complete），不允许追加新卷: %w", errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("Toàn truyện đã hoàn kết (phase=complete), không được thêm quyển mới: %w", errs.ErrToolPrecondition)
 		}
 		var vol domain.VolumeOutline
 		if err := decode("append_volume", &vol); err != nil {
@@ -258,19 +258,19 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			return nil, fmt.Errorf("load progress: %w: %w", errs.ErrStoreRead, perr)
 		}
 		if progress == nil {
-			return nil, fmt.Errorf("progress 未初始化: %w", errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("progress chưa được khởi tạo: %w", errs.ErrToolPrecondition)
 		}
 		if progress.Phase != domain.PhaseWriting {
-			return nil, fmt.Errorf("complete_book 仅在 writing 阶段可调用（当前 phase=%s）: %w", progress.Phase, errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("complete_book chỉ gọi được ở giai đoạn writing (phase hiện tại=%s): %w", progress.Phase, errs.ErrToolPrecondition)
 		}
 		if len(progress.PendingRewrites) > 0 {
-			return nil, fmt.Errorf("还有 %d 章在返工队列中，处理完再调 complete_book: %w", len(progress.PendingRewrites), errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("Còn %d chương trong hàng đợi viết lại, xử lý xong rồi mới gọi complete_book: %w", len(progress.PendingRewrites), errs.ErrToolPrecondition)
 		}
 		// 可枚举的完本前置校验必须在代码层(三分法),不能只依赖提示词里的
 		// "完结判定清单"——真实事故:规划刚落盘 phase 翻到 writing,弱模型顺手
 		// 误调 complete_book,0/68 章被直接标记完本。
 		if len(progress.CompletedChapters) == 0 {
-			return nil, fmt.Errorf("一章未写不可完本;规划完成后写作由系统自动推进,无需调用 complete_book: %w", errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("Chưa viết chương nào thì không thể hoàn kết; sau khi lập kế hoạch xong, việc viết do hệ thống tự đẩy, không cần gọi complete_book: %w", errs.ErrToolPrecondition)
 		}
 		next := progress.NextChapter()
 		if progress.Layered {
@@ -279,10 +279,10 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 				return nil, fmt.Errorf("load outlined chapters: %w: %w", errs.ErrStoreRead, outlineErr)
 			}
 			if next <= len(outline) {
-				return nil, fmt.Errorf("当前详细大纲还有未写章节（下一章 %d/当前已细化 %d），不可完本；想提前收束请改用 append_volume 且卷 JSON 顶层带 \"final\": true 宣告收官卷: %w", next, len(outline), errs.ErrToolPrecondition)
+				return nil, fmt.Errorf("Dàn ý chi tiết hiện tại còn chương chưa viết (chương kế tiếp %d / đã chi tiết hoá %d), không thể hoàn kết; muốn khép sớm hãy dùng append_volume với \"final\": true ở cấp ngoài cùng của JSON quyển để tuyên bố quyển kết: %w", next, len(outline), errs.ErrToolPrecondition)
 			}
 		} else if progress.TotalChapters > 0 && next <= progress.TotalChapters {
-			return nil, fmt.Errorf("大纲内还有未写章节（下一章 %d/共 %d），不可完本；想提前收束请改用 append_volume 且卷 JSON 顶层带 \"final\": true 宣告收官卷: %w", next, progress.TotalChapters, errs.ErrToolPrecondition)
+			return nil, fmt.Errorf("Dàn ý còn chương chưa viết (chương kế tiếp %d / tổng %d), không thể hoàn kết; muốn khép sớm hãy dùng append_volume với \"final\": true ở cấp ngoài cùng của JSON quyển để tuyên bố quyển kết: %w", next, progress.TotalChapters, errs.ErrToolPrecondition)
 		}
 		// 活跃长线未收束不可完本——OpenThreads 的字段契约即"需收束才能结局"。这不是
 		// 语义复判：真认为已全部收束，先 update_compass 清空 open_threads 再完本，把
@@ -293,7 +293,7 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 			return nil, fmt.Errorf("load compass: %w: %w", errs.ErrStoreRead, err)
 		}
 		if compass != nil && len(compass.OpenThreads) > 0 {
-			return nil, fmt.Errorf("compass 还有 %d 条活跃长线未收束（如：%s），不可完本。确认已全部收束请先 update_compass 清空 open_threads 再调 complete_book；仍需展开请 append_volume（可带 \"final\": true 宣告收官卷）: %w",
+			return nil, fmt.Errorf("compass còn %d tuyến dài đang mở chưa khép (ví dụ: %s), không thể hoàn kết. Đã xác nhận khép hết thì update_compass xoá trống open_threads trước rồi mới gọi complete_book; vẫn cần triển khai thì dùng append_volume (có thể kèm \"final\": true để tuyên bố quyển kết): %w",
 				len(compass.OpenThreads), compass.OpenThreads[0], errs.ErrToolPrecondition)
 		}
 		if err := t.store.Progress.MarkComplete(); err != nil {
@@ -377,7 +377,7 @@ func decodeFoundationJSON(typeName, content string, out any) error {
 	if err == nil {
 		return nil
 	}
-	hint := `常见原因：字符串值中的双引号未转义为 \", 换行未转义为 \n, 或对象字段间漏了逗号。请整段重新生成一次。`
+	hint := `Nguyên nhân thường gặp: dấu ngoặc kép trong giá trị chuỗi chưa thoát thành \", xuống dòng chưa thoát thành \n, hoặc thiếu dấu phẩy giữa các trường của đối tượng. Hãy sinh lại toàn bộ đoạn.`
 	if se, ok := err.(*json.SyntaxError); ok {
 		line, col := offsetToLineCol(content, int(se.Offset))
 		return fmt.Errorf("parse %s JSON (line %d col %d): %w — %s", typeName, line, col, err, hint)
@@ -433,7 +433,7 @@ func (t *SaveFoundationTool) recordVolumeEndDecision(action, reason string, fact
 	}
 	raw, err := json.Marshal(decision)
 	if err != nil {
-		slog.Error("卷末裁定序列化失败", "module", "tools", "action", action, "err", err)
+		slog.Error("Tuần tự hoá phán quyết cuối quyển thất bại", "module", "tools", "action", action, "err", err)
 		return
 	}
 	if _, err := t.store.Decisions.Append(store.DecisionRecord{
@@ -443,7 +443,7 @@ func (t *SaveFoundationTool) recordVolumeEndDecision(action, reason string, fact
 		Decision: raw,
 		Reason:   reason,
 	}); err != nil {
-		slog.Error("卷末裁定审计落盘失败", "module", "tools", "action", action, "err", err)
+		slog.Error("Lưu nhật ký thẩm định phán quyết cuối quyển thất bại", "module", "tools", "action", action, "err", err)
 	}
 }
 
