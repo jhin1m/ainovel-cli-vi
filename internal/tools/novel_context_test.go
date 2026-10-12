@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/store"
 )
@@ -1219,6 +1220,9 @@ func TestContextToolDoesNotInjectUserDirectives(t *testing.T) {
 }
 
 func TestContextToolComputesRuleViolationsFromAcceptedContent(t *testing.T) {
+	// 正文是中文：在 vi 下会额外命中 cjk_leak，本测试只验证用户规则重算，按 zh 运行。
+	lang.Set(lang.ZH)
+	t.Cleanup(func() { lang.Set(lang.VI) })
 	dir := t.TempDir()
 	st := store.NewStore(dir)
 	if err := st.Init(); err != nil {

@@ -172,26 +172,6 @@ func cloneFatigue(m map[string]int) map[string]int {
 	return out
 }
 
-// SystemDefaults 是代码内置的机械基线（最低优先级来源），不走 LLM 归一化。
-//
-// 数值迁自旧 assets/rules/default.md 的 front matter。阈值依据一并保留：
-// 后段疲劳词（像一/沉默了/没有说话/X息）来自 196 章长跑产物实证——传统 AI 套话被前段
-// 表灭绝后，模型转而把这些"节拍词"用到章均 5-7 次，阈值放宽以容忍正常使用。
-func SystemDefaults() Candidate {
-	return Candidate{
-		Source: "system_defaults",
-		Structured: Structured{
-			// 定长固定串的 AI 套句；checker 字面子串匹配，带变量的模式（不是X而是Y）归语义层。
-			ForbiddenPhrases: []string{"某种程度上", "值得注意的是", "不知为何", "五味杂陈"},
-			FatigueWords: map[string]int{
-				"不禁": 1, "竟然": 1, "仿佛": 2, "此外": 1, "然而": 2,
-				"一丝": 2, "一抹": 2, "一缕": 2, "宛如": 1, "不由得": 1,
-				"像一": 3, "沉默了": 2, "没有说话": 2, "几息": 3, "一息": 3, "数息": 2,
-			},
-		},
-	}
-}
-
 // sanitizeStructured 落实"空值/零值=字段缺失"：归一化器可能吐 genre:"" 这类占位
 // （原型实测），必须当作未声明，避免污染合并与机械检查。
 func sanitizeStructured(s Structured) Structured {
