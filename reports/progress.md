@@ -16,16 +16,20 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 ## Bảng việc
 | Đợt | Việc | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 0 | branch vi + baseline + repo GitHub + push | đang làm | |
-| 0 | khung ngôn ngữ (config, lang, assets loader) + test | chờ | |
-| 0 | scripts/check-han | chờ | |
-| 1 | prompts (assets vi) | chờ | worker |
+| 0 | branch vi + baseline + repo GitHub + push | xong | origin = git@github.com:jhin1m/ainovel-cli-vi (private, default vi); push qua SSH với core.sshCommand trỏ ~/.ainovel/github_known_hosts (token gh thiếu scope workflow) |
+| 0 | khung ngôn ngữ (config, lang, assets loader) + test | xong | bfa52dd |
+| 0 | scripts/check-han | xong | baseline: reports/check-han-baseline.txt (model=2109 log=93 asset thiếu 39) |
+| 1 | prompts | đang chạy | worktree ~/projects/ainovel-wt/prompts, branch vi-prompts, agent herdr `prompts` |
 | 1 | rules + domain | chờ | worker |
-| 1 | tui | chờ | worker |
+| 1 | tui | đang chạy | worktree ~/projects/ainovel-wt/tui, branch vi-tui, agent herdr `tui` |
 | 2 | host | chờ | worker |
 | 2 | tools | chờ | worker |
 | 2 | rest | chờ | worker |
+| 2b | patches: port bản vá quy hoạch kentjuno (dcc09e1 phần domain/tools/store, 998665f, 9b5c138, 7c615ec) | chờ | sau Đợt 2 để tránh đụng file; chỉ port lỗi còn tái hiện |
 | 3 | check-han=0, docs (README.vi, SYNC, NOTICE), smoke test, push, final-status | chờ | controller |
 
 ## Nhật ký
 - 2026-10-12: tạo branch vi, baseline xanh.
+- Prompt worker lưu ở ~/projects/ainovel-wt/_prompts/ (common.md + task-<x>.md), khởi chạy bằng launch.sh <task> <pane> <hướng>.
+- D6. Bản vá quy hoạch kentjuno tách thành việc riêng `patches` sau Đợt 2 (chúng trải qua domain/tools/store/flow — chạy song song sẽ xung đột với worker dịch chuỗi).
+- 2026-10-12: Đợt 0 xong, đã push. Đợt 1 khởi chạy 3 worker.
