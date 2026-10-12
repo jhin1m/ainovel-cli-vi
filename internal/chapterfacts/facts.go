@@ -57,7 +57,7 @@ func Properties(includeFeedback bool) []schema.Prop {
 			schema.Property("deviation", schema.String("mô tả chỗ lệch khỏi dàn ý")).Required(),
 			schema.Property("suggestion", schema.String("đề xuất điều chỉnh dàn ý phía sau")).Required(),
 		)
-		feedback["description"] = "đối tượng góp ý cho dàn ý phía sau; phải truyền thẳng JSON object, không truyền JSON đã chuyển thành chuỗi"
+		feedback["description"] = "đối tượng góp ý cho dàn ý phía sau; phải truyền thẳng JSON object, không truyền chuỗi JSON (JSON đã bị chuyển thành chuỗi)"
 		props = append(props, schema.Property("feedback", llmcontract.Nullable(feedback)).Required())
 	}
 	return props
