@@ -36,9 +36,9 @@ func InvalidPendingRewrites(snap *Snapshot) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoSuggest,
 		Target:     "meta/progress.json",
-		Title:      fmt.Sprintf("返工队列包含未完成章节: [%s]", intsToStr(invalid)),
+		Title:      fmt.Sprintf("Hàng đợi viết lại chứa chương chưa hoàn thành: [%s]", intsToStr(invalid)),
 		Evidence:   fmt.Sprintf("pending_rewrites=[%s], completed_chapters=[%s], flow=%s", intsToStr(p.PendingRewrites), intsToStr(completed), p.Flow),
-		Suggestion: "这是状态不变量损坏。请停止运行后编辑 meta/progress.json，移除 pending_rewrites 中未完成章节；若队列为空，将 flow 改为 writing 并清空 rewrite_reason。",
+		Suggestion: "Đây là lỗi hỏng bất biến trạng thái. Hãy dừng chạy rồi sửa meta/progress.json, gỡ các chương chưa hoàn thành khỏi pending_rewrites; nếu hàng đợi rỗng, đổi flow thành writing và xoá rewrite_reason.",
 	}}
 }
 
@@ -62,10 +62,10 @@ func RewritePendingPressure(snap *Snapshot) []Finding {
 		Confidence: ConfMedium,
 		AutoLevel:  AutoNone,
 		Target:     "runtime.flow",
-		Title:      fmt.Sprintf("待改写章节: [%s]", chapters),
+		Title:      fmt.Sprintf("Chương chờ viết lại: [%s]", chapters),
 		Evidence:   fmt.Sprintf("flow=%s, pending_rewrites=[%s]", p.Flow, chapters),
-		Suggestion: "检查 Editor 评审标准是否过严，或 Writer 改写 prompt 是否有效。" +
-			"某章返工反复失败时引擎会自动将其移出队列并继续后续创作，无需人工清理。",
+		Suggestion: "Kiểm tra tiêu chuẩn duyệt của Editor có quá khắt khe không, hoặc prompt viết lại của Writer có hiệu quả không." +
+			"Khi một chương viết lại thất bại liên tục, engine sẽ tự đưa nó ra khỏi hàng đợi và tiếp tục sáng tác phần sau, không cần dọn tay.",
 	}}
 }
 
@@ -84,9 +84,9 @@ func OrphanedSteer(snap *Snapshot) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoSafe,
 		Target:     "runtime.recovery",
-		Title:      "存在未消费的转向指令",
+		Title:      "Còn chỉ thị chuyển hướng chưa được xử lý",
 		Evidence:   fmt.Sprintf("pending_steer=%q, flow=%s", utils.TruncateRunes(snap.RunMeta.PendingSteer, 60), flowStr(snap.Progress)),
-		Suggestion: "该 steer 被持久化但未被干预裁定流程消费。检查中断恢复逻辑，或通过重新提交覆盖。",
+		Suggestion: "Steer này đã được lưu nhưng chưa được luồng phân xử can thiệp xử lý. Kiểm tra logic khôi phục sau gián đoạn, hoặc gửi lại để ghi đè.",
 	}}
 }
 
@@ -109,9 +109,9 @@ func PhaseFlowMismatch(snap *Snapshot) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoSafe,
 		Target:     "runtime.flow",
-		Title:      fmt.Sprintf("阶段/流程状态不匹配: phase=%s, flow=%s", p.Phase, p.Flow),
-		Evidence:   fmt.Sprintf("phase=%s 不应出现非初始 flow=%s", p.Phase, p.Flow),
-		Suggestion: "状态机可能损坏，需手动检查 meta/progress.json 的 phase 和 flow 字段。",
+		Title:      fmt.Sprintf("Trạng thái phase/flow không khớp: phase=%s, flow=%s", p.Phase, p.Flow),
+		Evidence:   fmt.Sprintf("phase=%s không được có flow khác trạng thái khởi đầu: flow=%s", p.Phase, p.Flow),
+		Suggestion: "Máy trạng thái có thể đã hỏng, cần kiểm tra tay các trường phase và flow trong meta/progress.json.",
 	}}
 }
 
@@ -139,9 +139,9 @@ func ChapterGaps(snap *Snapshot) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoNone,
 		Target:     "runtime.flow",
-		Title:      fmt.Sprintf("章节跳号: 缺少 [%s]", intsToStr(gaps)),
+		Title:      fmt.Sprintf("Nhảy số chương: thiếu [%s]", intsToStr(gaps)),
 		Evidence:   fmt.Sprintf("completed=[%s]", intsToStr(sorted)),
-		Suggestion: "commit_chapter 可能中途中断。检查 meta/pending_commit.json 是否存在未完成提交。",
+		Suggestion: "commit_chapter có thể bị gián đoạn giữa chừng. Kiểm tra meta/pending_commit.json có lượt commit dở dang không.",
 	}}
 }
 

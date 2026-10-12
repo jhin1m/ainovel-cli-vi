@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/utils"
 )
 
@@ -19,6 +21,79 @@ const minChapters = 5
 
 // phraseWindow 动态短语挖掘只看最近 N 章：writer 需要避免的是"现在的口头禅"。
 const phraseWindow = 20
+
+// patternDef là một loại mẫu câu cố định (tic văn phong AI) cần đếm.
+// Số đếm là gần đúng (regex không phân tích ngữ pháp), dùng để so với chính nền
+// của cuốn sách theo thời gian; độ chính xác tuyệt đối không quan trọng.
+type patternDef struct {
+	name string
+	re   *regexp.Regexp
+}
+
+// profile gom mọi dữ liệu và quy tắc phụ thuộc ngôn ngữ của thống kê văn phong:
+// danh sách mẫu câu, cách tách câu, nhận diện mở đầu bằng thời gian, tiền tố tiêu đề
+// chương và cách khai thác cụm từ tần suất cao.
+type profile struct {
+	patterns      []patternDef
+	sentenceSplit *regexp.Regexp
+	openingTime   *regexp.Regexp
+	titlePrefix   *regexp.Regexp
+	// displayRunes là số rune tối đa khi hiển thị câu lặp (văn Latin cần dài hơn chữ Hán).
+	displayRunes int
+	minePhrases  func(chapters, stopwords []string) []PhraseStat
+}
+
+// activeProfile chọn profile theo ngôn ngữ sáng tác của tiến trình.
+func activeProfile() *profile {
+	if lang.IsVI() {
+		return viProfile
+	}
+	return zhProfile
+}
+
+// pickPhrases sắp xếp ứng viên theo tần suất (cùng tần suất thì ưu tiên dài hơn),
+// lấy tối đa 8 cụm và bỏ cụm trùng lặp theo hàm contains.
+func pickPhrases(counts map[string]int, threshold int, reject func(string) bool, contains func(a, b string) bool) []PhraseStat {
+	type cand struct {
+		text  string
+		count int
+	}
+	var cands []cand
+	for g, c := range counts {
+		if c < threshold || reject(g) {
+			continue
+		}
+		cands = append(cands, cand{g, c})
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].count != cands[j].count {
+			return cands[i].count > cands[j].count
+		}
+		// 同频取更长的（信息量更大），再按字典序稳定排序
+		if len(cands[i].text) != len(cands[j].text) {
+			return len(cands[i].text) > len(cands[j].text)
+		}
+		return cands[i].text < cands[j].text
+	})
+
+	var out []PhraseStat
+	for _, c := range cands {
+		if len(out) >= 8 {
+			break
+		}
+		dup := false
+		for _, picked := range out {
+			if contains(picked.Text, c.text) || contains(c.text, picked.Text) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, PhraseStat{Text: c.text, Count: c.count})
+		}
+	}
+	return out
+}
 
 // Input 统计输入。Chapters 按章号升序；Stopwords 为角色名等专有名词，
 // 动态短语挖掘时跳过（出场人名天然高频，不是文风问题）。
@@ -71,30 +146,19 @@ type TitleStat struct {
 	WithoutPrefix int `json:"without_prefix"`
 }
 
-// patternDefs 通用 AI 文风句式模式。计数是近似（正则不做语法分析），
-// 用途是本书自身的纵向基线对比，绝对精度不重要。
-var patternDefs = []struct {
-	name string
-	re   *regexp.Regexp
-}{
-	{"矫正句『不是…(而)是…』", regexp.MustCompile(`不是[^。！？\n]{1,24}?[，、]?(?:而)?是`)},
-	{"计时量词『X息/X瞬』", regexp.MustCompile(`[一两二三四五六七八九十几数半][息瞬]`)},
-	{"明喻『像一/仿佛/如同/宛如』", regexp.MustCompile(`像一|仿佛|如同|宛如`)},
-	{"沉默节拍『沉默了/没有说话/没有回头』", regexp.MustCompile(`沉默了|没有说话|没有回头`)},
-	{"神态模板『眼中闪过/嘴角勾起/咬了咬唇』", regexp.MustCompile(`眼[中底]闪过|目光一凝|瞳孔一缩|眼眶微红|嘴角[微轻一]?[勾扬翘]|咬了咬唇|不可置信`)},
-	{"躯体反应『心头一紧/身子一颤/倒吸凉气』", regexp.MustCompile(`心头一[紧沉颤]|身子一[颤震僵]|倒吸(?:了)?一口凉气`)},
-	{"思维标记『心想/意识到/感到/觉得』", regexp.MustCompile(`心想|意识到|感到|觉得`)},
-	{"抽象套话『一种说不出的/的意义在于』", regexp.MustCompile(`一种说不出的|说不清[的道]|的意义在于|真正的[^。！？\n]{1,10}是`)},
-}
-
-var (
-	sentenceSplit = regexp.MustCompile(`[。！？\n]+`)
-	openingTimeRe = regexp.MustCompile(`夜|清晨|黎明|天亮|醒来|晨光|一整夜`)
-	titlePrefixRe = regexp.MustCompile(`^#{0,2}\s*第[零〇一二三四五六七八九十百千万\d]+章`)
-)
-
-// shortEndingRunes 末行不超过此字数计为"短结尾"。
+// shortEndingRunes 末行不超过此字数计为"短结尾"（tiếng Việt: số từ/âm tiết, xem textLen）。
 const shortEndingRunes = 30
+
+// minSentenceLen là độ dài tối thiểu (chữ Hán hoặc âm tiết Việt) để một câu được tính
+// vào thống kê câu lặp nguyên văn xuyên chương.
+const minSentenceLen = 12
+
+// textLen đo độ dài nội dung truyện theo ngôn ngữ hiện hành qua domain.WordCount
+// (zh: số rune, vi: số từ tách theo khoảng trắng). Ngưỡng shortEndingRunes và
+// minSentenceLen giữ nguyên mức số cho cả hai ngôn ngữ: một chữ Hán tương ứng xấp xỉ
+// một âm tiết tiếng Việt, mà mỗi "từ" tách theo khoảng trắng chính là một âm tiết,
+// nên câu 12 chữ Hán ≈ câu 12 âm tiết, dòng cuối 30 chữ ≈ 30 âm tiết.
+func textLen(s string) int { return domain.WordCount(s) }
 
 // Compute 计算全书风格统计；章数不足时返回 nil。
 func Compute(in Input) *Stats {
@@ -103,9 +167,10 @@ func Compute(in Input) *Stats {
 		return nil
 	}
 	all := strings.Join(in.Chapters, "\n")
+	prof := activeProfile()
 
 	s := &Stats{Chapters: n}
-	for _, def := range patternDefs {
+	for _, def := range prof.patterns {
 		total := len(def.re.FindAllStringIndex(all, -1))
 		if total == 0 {
 			continue
@@ -116,11 +181,11 @@ func Compute(in Input) *Stats {
 			PerChapter: round1(float64(total) / float64(n)),
 		})
 	}
-	s.TopPhrases = minePhrases(recentWindow(in.Chapters), in.Stopwords)
-	s.RepeatedSentences = repeatedSentences(in.Chapters)
+	s.TopPhrases = prof.minePhrases(recentWindow(in.Chapters), in.Stopwords)
+	s.RepeatedSentences = repeatedSentences(prof, in.Chapters)
 	s.Ending = endingShape(in.Chapters)
-	s.OpeningTimeRate = openingTimeRate(in.Chapters)
-	s.TitleFormats = titleFormats(in.Titles)
+	s.OpeningTimeRate = openingTimeRate(prof, in.Chapters)
+	s.TitleFormats = titleFormats(prof, in.Titles)
 	return s
 }
 
@@ -131,116 +196,15 @@ func recentWindow(chapters []string) []string {
 	return chapters[len(chapters)-phraseWindow:]
 }
 
-// minePhrases 在窗口内挖掘 3-6 字高频短语。
-// 过滤：含标点/空白、首尾虚词、命中专有名词；去重：与已选短语互为子串的丢弃。
-func minePhrases(chapters []string, stopwords []string) []PhraseStat {
-	text := strings.Join(chapters, "\n")
-	runes := []rune(text)
-	threshold := max(8, len(chapters)/2)
-
-	counts := make(map[string]int)
-	for size := 3; size <= 6; size++ {
-		for i := 0; i+size <= len(runes); i++ {
-			gram := runes[i : i+size]
-			if !validGram(gram) {
-				continue
-			}
-			counts[string(gram)]++
-		}
-	}
-
-	stopGrams := stopwordBigrams(stopwords)
-	type cand struct {
-		text  string
-		count int
-	}
-	var cands []cand
-	for g, c := range counts {
-		if c < threshold || hitStopword(g, stopGrams) {
-			continue
-		}
-		cands = append(cands, cand{g, c})
-	}
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].count != cands[j].count {
-			return cands[i].count > cands[j].count
-		}
-		// 同频取更长的（信息量更大），再按字典序稳定排序
-		if len(cands[i].text) != len(cands[j].text) {
-			return len(cands[i].text) > len(cands[j].text)
-		}
-		return cands[i].text < cands[j].text
-	})
-
-	var out []PhraseStat
-	for _, c := range cands {
-		if len(out) >= 8 {
-			break
-		}
-		dup := false
-		for _, picked := range out {
-			if strings.Contains(picked.Text, c.text) || strings.Contains(c.text, picked.Text) {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			out = append(out, PhraseStat{Text: c.text, Count: c.count})
-		}
-	}
-	return out
-}
-
-// gramEdgeStop 首尾为这些虚词/代词的 n-gram 不是文风短语，跳过。
-const gramEdgeStop = "的了着是在和与就也都还又把被他她它我你这那"
-
-func validGram(gram []rune) bool {
-	for _, r := range gram {
-		if r < 0x4E00 || r > 0x9FFF { // 仅纯汉字片段
-			return false
-		}
-	}
-	if strings.ContainsRune(gramEdgeStop, gram[0]) || strings.ContainsRune(gramEdgeStop, gram[len(gram)-1]) {
-		return false
-	}
-	return true
-}
-
-// stopwordBigrams 把专有名词拆成 2 字片段：人名常以部分形式入文
-// （"九渊负手"含"九渊"），按整名匹配会漏网。宁可过滤偏严——短语事实少一条
-// 无碍，人名混进口头禅清单才是噪声。
-func stopwordBigrams(stopwords []string) []string {
-	var grams []string
-	for _, w := range stopwords {
-		runes := []rune(strings.TrimSpace(w))
-		if len(runes) < 2 {
-			continue
-		}
-		for i := 0; i+2 <= len(runes); i++ {
-			grams = append(grams, string(runes[i:i+2]))
-		}
-	}
-	return grams
-}
-
-func hitStopword(gram string, stopGrams []string) bool {
-	for _, g := range stopGrams {
-		if strings.Contains(gram, g) {
-			return true
-		}
-	}
-	return false
-}
-
 // repeatedSentences 找跨 ≥3 章逐字重复的 ≥12 字句子，按次数取 top 5。
-func repeatedSentences(chapters []string) []SentenceStat {
+func repeatedSentences(prof *profile, chapters []string) []SentenceStat {
 	type rec struct {
 		count    int
 		chapters map[int]struct{}
 	}
 	seen := make(map[string]*rec)
 	for ci, text := range chapters {
-		for sent, count := range chapterSentenceCounts(text) {
+		for sent, count := range chapterSentenceCounts(prof, text) {
 			r := seen[sent]
 			if r == nil {
 				r = &rec{chapters: make(map[int]struct{})}
@@ -256,7 +220,7 @@ func repeatedSentences(chapters []string) []SentenceStat {
 		if len(r.chapters) < 3 {
 			continue
 		}
-		out = append(out, SentenceStat{Text: utils.TruncateRunes(sent, 40), Chapters: len(r.chapters), Count: r.count})
+		out = append(out, SentenceStat{Text: utils.TruncateRunes(sent, prof.displayRunes), Chapters: len(r.chapters), Count: r.count})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
@@ -283,7 +247,7 @@ func endingShape(chapters []string) EndingStat {
 		if line == "" {
 			continue
 		}
-		n := len([]rune(line))
+		n := textLen(line)
 		lengths = append(lengths, n)
 		if n <= shortEndingRunes {
 			short++
@@ -299,17 +263,17 @@ func endingShape(chapters []string) EndingStat {
 	}
 }
 
-func openingTimeRate(chapters []string) float64 {
+func openingTimeRate(prof *profile, chapters []string) float64 {
 	hit := 0
 	for _, text := range chapters {
-		if openingTimeRe.MatchString(firstParagraph(text)) {
+		if prof.openingTime.MatchString(firstParagraph(text)) {
 			hit++
 		}
 	}
 	return round2(float64(hit) / float64(len(chapters)))
 }
 
-func titleFormats(titles []string) *TitleStat {
+func titleFormats(prof *profile, titles []string) *TitleStat {
 	if len(titles) == 0 {
 		return nil
 	}
@@ -318,7 +282,7 @@ func titleFormats(titles []string) *TitleStat {
 		if strings.TrimSpace(title) == "" {
 			continue
 		}
-		if titlePrefixRe.MatchString(title) {
+		if prof.titlePrefix.MatchString(strings.TrimSpace(title)) {
 			t.WithPrefix++
 		} else {
 			t.WithoutPrefix++

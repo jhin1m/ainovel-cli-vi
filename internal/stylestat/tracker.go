@@ -13,6 +13,9 @@ import (
 type Tracker struct {
 	mu sync.Mutex
 
+	// prof cố định theo ngôn ngữ lúc tạo Tracker để số loại mẫu câu không đổi giữa chừng.
+	prof *profile
+
 	chapters      map[int]chapterStats
 	patternTotals []int
 	sentences     map[string]sentenceAggregate
@@ -41,9 +44,11 @@ type sentenceAggregate struct {
 }
 
 func NewTracker() *Tracker {
+	prof := activeProfile()
 	return &Tracker{
+		prof:          prof,
 		chapters:      make(map[int]chapterStats),
-		patternTotals: make([]int, len(patternDefs)),
+		patternTotals: make([]int, len(prof.patterns)),
 		sentences:     make(map[string]sentenceAggregate),
 	}
 }
@@ -60,7 +65,7 @@ func (t *Tracker) Upsert(chapter int, text string) {
 		}
 		t.subtract(previous)
 	}
-	current := analyzeChapter(text)
+	current := analyzeChapter(t.prof, text)
 	t.add(current)
 	t.chapters[chapter] = current
 	t.version++
@@ -106,11 +111,14 @@ func (t *Tracker) Snapshot(titles, stopwords []string) *Stats {
 }
 
 func (t *Tracker) ensure() {
+	if t.prof == nil {
+		t.prof = activeProfile()
+	}
 	if t.chapters == nil {
 		t.chapters = make(map[int]chapterStats)
 	}
-	if len(t.patternTotals) != len(patternDefs) {
-		t.patternTotals = make([]int, len(patternDefs))
+	if len(t.patternTotals) != len(t.prof.patterns) {
+		t.patternTotals = make([]int, len(t.prof.patterns))
 	}
 	if t.sentences == nil {
 		t.sentences = make(map[string]sentenceAggregate)
@@ -169,7 +177,7 @@ func (t *Tracker) snapshot(titles, stopwords []string) *Stats {
 			continue
 		}
 		stats.Patterns = append(stats.Patterns, PatternStat{
-			Name:       patternDefs[i].name,
+			Name:       t.prof.patterns[i].name,
 			Total:      total,
 			PerChapter: round1(float64(total) / float64(n)),
 		})
@@ -180,14 +188,14 @@ func (t *Tracker) snapshot(titles, stopwords []string) *Stats {
 	for _, chapter := range ids[recentStart:] {
 		recent = append(recent, t.chapters[chapter].text)
 	}
-	stats.TopPhrases = minePhrases(recent, stopwords)
+	stats.TopPhrases = t.prof.minePhrases(recent, stopwords)
 
 	for sentence, aggregate := range t.sentences {
 		if aggregate.chapters < 3 {
 			continue
 		}
 		stats.RepeatedSentences = append(stats.RepeatedSentences, SentenceStat{
-			Text:     utils.TruncateRunes(sentence, 40),
+			Text:     utils.TruncateRunes(sentence, t.prof.displayRunes),
 			Chapters: aggregate.chapters,
 			Count:    aggregate.count,
 		})
@@ -222,32 +230,32 @@ func (t *Tracker) snapshot(titles, stopwords []string) *Stats {
 	}
 
 	stats.OpeningTimeRate = round2(float64(t.openingHits) / float64(n))
-	stats.TitleFormats = titleFormats(titles)
+	stats.TitleFormats = titleFormats(t.prof, titles)
 	return stats
 }
 
-func analyzeChapter(text string) chapterStats {
+func analyzeChapter(prof *profile, text string) chapterStats {
 	stats := chapterStats{
 		text:      text,
-		patterns:  make([]int, len(patternDefs)),
-		sentences: chapterSentenceCounts(text),
+		patterns:  make([]int, len(prof.patterns)),
+		sentences: chapterSentenceCounts(prof, text),
 	}
-	for i, def := range patternDefs {
+	for i, def := range prof.patterns {
 		stats.patterns[i] = len(def.re.FindAllStringIndex(text, -1))
 	}
 	if ending := lastNonEmptyLine(text); ending != "" {
-		stats.endingRunes = len([]rune(ending))
+		stats.endingRunes = textLen(ending)
 		stats.hasEnding = true
 	}
-	stats.openingTime = openingTimeRe.MatchString(firstParagraph(text))
+	stats.openingTime = prof.openingTime.MatchString(firstParagraph(text))
 	return stats
 }
 
-func chapterSentenceCounts(text string) map[string]int {
+func chapterSentenceCounts(prof *profile, text string) map[string]int {
 	counts := make(map[string]int)
-	for _, sentence := range sentenceSplit.Split(text, -1) {
+	for _, sentence := range prof.sentenceSplit.Split(text, -1) {
 		sentence = trimWrappedQuotes(sentence)
-		if len([]rune(sentence)) < 12 {
+		if textLen(sentence) < minSentenceLen {
 			continue
 		}
 		counts[sentence]++

@@ -54,12 +54,12 @@ func repeatedErrors(rc *RuntimeCapture) []Finding {
 		switch {
 		case strings.Contains(r.Sig, " · err: "):
 			rule = "RepeatedToolError"
-			title = "工具反复报同一错误"
-			sugg = "近端同一工具反复返回同一错误，多为模型参数不合规或工具契约不符；查 agentcore 工具校验 / prompt 参数约定（参见 #34）。"
+			title = "Tool liên tục báo cùng một lỗi"
+			sugg = "Gần đây cùng một tool liên tục trả về cùng một lỗi, thường do tham số của model không hợp lệ hoặc lệch hợp đồng tool; xem phần kiểm tra tool của agentcore / quy ước tham số trong prompt (xem #34)."
 		case strings.Contains(r.Sig, "(args invalid)"):
 			rule = "ArgsInvalidLoop"
-			title = "参数反复无法解析"
-			sugg = "模型发来的参数无法解析却不断重试；看 agentcore 是否对该类型做了宽松强转（参见 #34）。"
+			title = "Tham số liên tục không phân tích được"
+			sugg = "Tham số model gửi lên không phân tích được nhưng vẫn thử lại liên tục; xem agentcore có ép kiểu nới lỏng cho kiểu này không (xem #34)."
 		default:
 			continue // 普通工具重复不产 Finding
 		}
@@ -98,9 +98,9 @@ func stuckStep(rc *RuntimeCapture) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoNone,
 		Target:     "runtime.flow",
-		Title:      "checkpoint 停滞在同一 step",
-		Evidence:   fmt.Sprintf("连续停在 `%s` ×%d", rc.StuckStep, rc.StuckCount),
-		Suggestion: "同一 step 反复写入而不推进；结合上面的重复签名定位是哪个子代理卡住。",
+		Title:      "checkpoint đứng yên ở cùng một step",
+		Evidence:   fmt.Sprintf("dừng liên tiếp ở `%s` ×%d", rc.StuckStep, rc.StuckCount),
+		Suggestion: "Cùng một step bị ghi lặp lại mà không tiến; kết hợp các chữ ký lặp ở trên để xác định subagent nào bị kẹt.",
 	}}
 }
 
@@ -117,8 +117,8 @@ func streamIdleStorm(rc *RuntimeCapture) []Finding {
 		Confidence: ConfHigh,
 		AutoLevel:  AutoNone,
 		Target:     "runtime.provider",
-		Title:      "流式中断频发（stream_idle）",
+		Title:      "Luồng stream thường xuyên bị ngắt (stream_idle)",
 		Evidence:   fmt.Sprintf("stream_idle ×%d", n),
-		Suggestion: "上游长时间不吐 token 被 watchdog 误杀；慢思考模型调大 streamIdleTimeout，或排查 provider 连接稳定性（参见 #32）。",
+		Suggestion: "Upstream lâu không trả token nên bị watchdog ngắt nhầm; với model suy nghĩ chậm hãy tăng streamIdleTimeout, hoặc kiểm tra độ ổn định kết nối tới provider (xem #32).",
 	}}
 }
