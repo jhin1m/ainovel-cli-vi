@@ -41,7 +41,7 @@ Ví dụ dùng GLM qua z.ai (gói coding plan, endpoint tương thích OpenAI). 
 {
   "provider": "glm",
   "model": "glm-5.3",
-  "reasoning_effort": "medium",
+  "reasoning_effort": "high",
   "language": "vi",
   "style": "fantasy",
   "providers": {
@@ -58,6 +58,9 @@ Ví dụ dùng GLM qua z.ai (gói coding plan, endpoint tương thích OpenAI). 
 ```
 
 - `language`: `"vi"` hoặc `"zh"`. Bỏ trống = `"vi"`.
+- `reasoning_effort` với GLM-5.x: dùng `"low"`, `"high"` hoặc `"max"`. Giá trị `"medium"` có lúc bị z.ai từ chối
+  (HTTP 400, mã 1210 "This model always engages in thinking and cannot be disabled"), Arbiter sẽ tạm dừng bộ máy.
+  Có thể ghi đè riêng cho một thư mục truyện bằng `./.ainovel/config.json` chỉ chứa `{"reasoning_effort": "high"}`.
 - `style`: `default` / `fantasy` (huyền huyễn, tiên hiệp) / `romance` / `suspense`.
 - `roles.<architect|writer|editor|arbiter>` cho phép mỗi vai một model riêng, xem `config.example.jsonc`.
 - File config chứa API key: không commit. `.ainovel/` đã nằm trong `.gitignore`.
