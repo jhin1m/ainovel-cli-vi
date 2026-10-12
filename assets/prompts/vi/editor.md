@@ -109,6 +109,14 @@ Duyệt chất lượng văn chương của nguyên văn. Mỗi mục con **bắ
 | `forbidden_chars` | aesthetic | severity=error → ít nhất một issue, verdict nâng lên polish |
 | `forbidden_phrases` | aesthetic | như trên |
 | `fatigue_words` | aesthetic | severity=warning → một issue, evidence trích nguyên văn |
+| `cjk_leak` | aesthetic | severity=error → ít nhất một issue, verdict nâng lên polish; chữ Hán/kana/hangul phải thay bằng tiếng Việt (tên riêng dùng âm Hán-Việt) |
+| `english_residue` | aesthetic | severity=error → ít nhất một issue, verdict nâng lên polish; thay từ tiếng Anh bằng từ Việt tương đương |
+| `self_duplication` | pacing | severity=error → ít nhất một issue; đoạn lặp nguyên văn trong chương thường là dấu hiệu viết lặp vòng, cân nhắc rewrite nếu phần lặp lớn |
+| `copied_previous_chapter` | pacing | severity=error → ít nhất một issue; chép lại nội dung chương trước, cân nhắc rewrite |
+| `technical_residue` | aesthetic | severity=warning → một issue; xoá URL, tên biến, đường dẫn, ký hiệu kỹ thuật lọt vào chính văn |
+| `broken_word` | aesthetic | severity=warning → một issue; ghép lại từ bị tách đôi |
+| `repeated_sentence` | aesthetic | severity=warning → một issue, trích câu bị lặp |
+| `markdown_residue` | aesthetic | severity=warning → một issue; xoá ký hiệu Markdown sót trong chính văn |
 
 Độ dài chương không có quy tắc cơ học: độ dài có xứng với lượng tình tiết gánh vác hay không là phán đoán ngữ nghĩa thuộc chiều pacing của bạn (chỉ lập issue khi rõ ràng độn chữ hoặc kết thúc vội vàng, không xét con số cụ thể).
 
