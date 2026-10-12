@@ -10,7 +10,9 @@ import (
 
 // validateCommitArgs 在创建 PendingCommit 前校验模型提交的完整语义载荷。
 // 错误直接返回模型修正；不生成半成品状态，也不猜测缺失值。
-func (t *CommitChapterTool) validateCommitArgs(a commitArgs) error {
+// replay=true 表示重放已冻结的 PendingCommit：此时跳过 id 占位/占用检查——旧版本
+// 冻结的载荷可能不满足这些后加的规则，而普通提交的冻结不会自动解除，拦下会让本书卡死。
+func (t *CommitChapterTool) validateCommitArgs(a commitArgs, replay bool) error {
 	if err := chapterfacts.Validate(a.ChapterFacts); err != nil {
 		return fmt.Errorf("%v: %w", err, errs.ErrToolArgs)
 	}
@@ -31,14 +33,14 @@ func (t *CommitChapterTool) validateCommitArgs(a commitArgs) error {
 		for i, update := range a.ForeshadowUpdates {
 			switch update.Action {
 			case "plant":
-				if placeholderForeshadowID(update.ID) {
+				if !replay && placeholderForeshadowID(update.ID) {
 					return fmt.Errorf("foreshadow_updates[%d].id = %q là id giữ chỗ, không phải định danh. Mỗi phục bút cần một id duy nhất và ổn định "+
 						"(ví dụ FORESHADOW_OBSERVER, jade-pendant) để các chương sau advance/resolve; dùng lại id giữ chỗ sẽ khiến phục bút mới đè lên mục cũ: %w",
 						i, update.ID, errs.ErrToolArgs)
 				}
 				// 账本按 id 去重：别的章已种下同一 id 时，本次 plant 会被静默吞掉（描述一并
 				// 丢失）。同章重放（返工/恢复）是幂等的，放行。
-				if at := plantedAt[update.ID]; at != 0 && at != a.Chapter {
+				if at := plantedAt[update.ID]; !replay && at != 0 && at != a.Chapter {
 					return fmt.Errorf("foreshadow_updates[%d].id %q đã được chương %d dùng; phục bút mới cần id riêng chưa từng dùng, "+
 						"muốn tiếp nối phục bút cũ thì dùng action advance/resolve: %w",
 						i, update.ID, at, errs.ErrToolArgs)

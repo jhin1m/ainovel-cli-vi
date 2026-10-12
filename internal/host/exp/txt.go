@@ -110,8 +110,9 @@ func renderTXT(
 ) string {
 	var b strings.Builder
 
+	lb := labels()
 	if name := strings.TrimSpace(novelName); name != "" {
-		b.WriteString(name)
+		b.WriteString(lb.nameOpen + name + lb.nameClose)
 		b.WriteString("\n\n")
 	}
 
@@ -121,17 +122,13 @@ func renderTXT(
 		if useLayered {
 			if loc, ok := locations[ch]; ok && loc.IsFirstOfVolume {
 				b.WriteString("\n═══════════════════════════════════════════\n")
-				fmt.Fprintf(&b, "           %s\n", volumeHeading(loc.VolumeIdx, loc.VolumeTitle))
+				fmt.Fprintf(&b, "           %s\n", lb.volumeHeading(loc.VolumeIdx, strings.TrimSpace(loc.VolumeTitle), true))
 				b.WriteString("═══════════════════════════════════════════\n\n")
 			}
 		}
 
 		title := titleIdx.display(ch)
-		if title != "" {
-			fmt.Fprintf(&b, "Chương %d: %s\n\n", ch, title)
-		} else {
-			fmt.Fprintf(&b, "Chương %d\n\n", ch)
-		}
+		b.WriteString(lb.chapterHeading(ch, title, true) + "\n\n")
 
 		body := stripChapterTitleHeader(strings.TrimSpace(bodies[ch]), title)
 		b.WriteString(body)
@@ -141,14 +138,6 @@ func renderTXT(
 		}
 	}
 	return b.String()
-}
-
-// volumeHeading 生成卷分隔标题；卷名缺失时只输出卷号。
-func volumeHeading(idx int, title string) string {
-	if title = strings.TrimSpace(title); title != "" {
-		return fmt.Sprintf("Quyển %d: %s", idx, title)
-	}
-	return fmt.Sprintf("Quyển %d", idx)
 }
 
 // titleChapterPrefixRe 匹配标题开头自带的章号（第 N 章 / Chương N / Chapter N）及其后的分隔符。

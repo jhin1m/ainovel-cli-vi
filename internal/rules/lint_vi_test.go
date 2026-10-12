@@ -48,7 +48,7 @@ func TestCJKLeak_CatchesHanKanaHangulAndPunctuation(t *testing.T) {
 // Rò rỉ thật đã thấy: hư từ tiếng Anh ngay sau gạch ngang.
 func TestEnglishResidue_CatchesFunctionWords(t *testing.T) {
 	text := "Lá cây bắt đầu chuyển động—not nhanh chóng mà nhẹ nhàng nghiêng mình. " +
-		"Tông môn, pháp sư—they đang theo dõi ngươi từ xa. The gió vẫn thổi."
+		"Tông môn, pháp sư—they đang theo dõi ngươi từ xa. But gió vẫn thổi."
 	v := findRule(Lint(text), "english_residue")
 	if v == nil {
 		t.Fatal("mong đợi english_residue")
@@ -56,8 +56,17 @@ func TestEnglishResidue_CatchesFunctionWords(t *testing.T) {
 	if v.Severity != SeverityError || v.Actual != 3 {
 		t.Errorf("mong đợi error ×3, nhận %+v", v)
 	}
-	if !strings.Contains(v.Target, "not") || !strings.Contains(v.Target, "they") || !strings.Contains(v.Target, "the") {
-		t.Errorf("ví dụ phải gồm not/they/the: %q", v.Target)
+	if !strings.Contains(v.Target, "not") || !strings.Contains(v.Target, "they") || !strings.Contains(v.Target, "but") {
+		t.Errorf("ví dụ phải gồm not/they/but: %q", v.Target)
+	}
+}
+
+// Từ tiếng Việt trùng chữ tiếng Anh, từ lóng mượn và tên riêng viết hoa giữa câu không bị báo.
+func TestEnglishResidue_IgnoresVietnameseHomographsAndMidSentenceNames(t *testing.T) {
+	text := "Bà mặc áo the, giọng the thé gọi với theo. Cô thả like rồi up ảnh lên, hôm nay ngày off. " +
+		"Gã tên Will ngồi nghe nhạc The Beatles bên cửa sổ."
+	if v := findRule(Lint(text), "english_residue"); v != nil {
+		t.Fatalf("không được báo: %+v", v)
 	}
 }
 

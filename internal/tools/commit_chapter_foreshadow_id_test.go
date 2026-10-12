@@ -61,3 +61,22 @@ func TestCommitChapterRejectsPlaceholderForeshadowID(t *testing.T) {
 		}
 	}
 }
+
+// Payload đã đóng băng từ phiên bản cũ được phát lại nguyên văn: kiểm tra id (thêm sau)
+// không được chặn, nếu không lần nộp thường dở dang sẽ kẹt vĩnh viễn.
+func TestValidateCommitArgsReplaySkipsForeshadowIDChecks(t *testing.T) {
+	s := foreshadowIDStore(t, "f_jade")
+	tool := newTestCommitChapterTool(s)
+	for _, id := range []string{"new", "f_jade"} {
+		var a commitArgs
+		if err := json.Unmarshal(plantArgs(2, id), &a); err != nil {
+			t.Fatal(err)
+		}
+		if err := tool.validateCommitArgs(a, false); err == nil {
+			t.Fatalf("lần nộp mới với id %q phải bị bác", id)
+		}
+		if err := tool.validateCommitArgs(a, true); err != nil {
+			t.Fatalf("phát lại payload cũ với id %q không được bị chặn: %v", id, err)
+		}
+	}
+}

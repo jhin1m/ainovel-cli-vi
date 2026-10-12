@@ -127,7 +127,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 		return t.finishPendingCommit(*existingPending, progress)
 	}
 	if existingPending == nil || existingPending.Stage == domain.CommitStageStarted {
-		if err := t.validateCommitArgs(a); err != nil {
+		if err := t.validateCommitArgs(a, existingPending != nil); err != nil {
 			// 旧版本可能在发现非法返工事实前就留下了冻结提交。继续保留这份
 			// 不可变载荷只会让每次重试重复同一个错误，因此显式解除冻结，
 			// 让 Writer 能修正参数后重新提交；正文和章节记录均不在此改动。

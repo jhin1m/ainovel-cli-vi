@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -38,13 +39,13 @@ func appendCJKLeak(vs []Violation, text string) []Violation {
 }
 
 // asciiTokens 切出正文的词元；只有纯 ASCII 词元才可能是英语或代码残留，越南语词几乎都带非 ASCII 字母。
-func asciiTokens(text string) []string {
-	var out []string
+func asciiTokens(text string) []asciiToken {
+	var out []asciiToken
 	start := -1
 	ascii := true
 	flush := func(end int) {
 		if start >= 0 && ascii {
-			out = append(out, text[start:end])
+			out = append(out, asciiToken{text: text[start:end], start: start})
 		}
 		start, ascii = -1, true
 	}
@@ -75,12 +76,15 @@ func asciiTokens(text string) []string {
 // 只认全小写或首字母大写（句首 "The"）；全大写视为缩写放过。
 func appendEnglishResidue(vs []Violation, text string) []Violation {
 	var hits []string
-	for _, tok := range asciiTokens(text) {
+	for _, t := range asciiTokens(text) {
+		tok := t.text
 		low := strings.ToLower(tok)
 		if _, ok := englishWords[low]; !ok {
 			continue
 		}
-		if tok == low || tok[1:] == low[1:] {
+		// Chữ thường luôn tính; viết hoa chữ cái đầu chỉ tính khi đứng đầu câu,
+		// giữa câu thì đó là tên riêng/thương hiệu (Will, The Beatles).
+		if tok == low || (tok[1:] == low[1:] && sentenceStart(text, t.start)) {
 			hits = append(hits, tok)
 		}
 	}
@@ -96,13 +100,37 @@ func appendEnglishResidue(vs []Violation, text string) []Violation {
 }
 
 // englishWords 只收不会与无附标越南语词冲突的英语词。刻意排除：
-// a/an/to/in/do/no/so/me/be/he/my/can/may/than/ten/long/man/son/go/hit。
-var englishWords = toSet(`the and but for from with they this that these those just was were have has had
-when which while into over not are is of or will would could should been being what where there their
+// a/an/to/in/do/no/so/me/be/he/my/can/may/than/ten/long/man/son/go/hit，
+// 以及 the（vải the, giọng the thé）、will（人名）、one/out/up/off/like（越南语口语借词）。
+var englishWords = toSet(`and but for from with they this that these those just was were have has had
+when which while into over not are is of or would could should been being what where there their
 them then your you she his her him its our we it by as if yes all some very about after before again
 never always maybe really still only even because however although though without something nothing
 everything suddenly perhaps already until upon through against between under around here now how why
-who one out up off like`)
+who`)
+
+// asciiToken là một từ chỉ gồm chữ ASCII cùng vị trí byte bắt đầu trong văn bản.
+type asciiToken struct {
+	text  string
+	start int
+}
+
+// sentenceStart cho biết vị trí i có đứng đầu câu không: trước nó (bỏ khoảng trắng và
+// dấu mở ngoặc/ngoặc kép) là đầu văn bản, xuống dòng, hoặc dấu kết câu/gạch thoại.
+func sentenceStart(text string, i int) bool {
+	for i > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:i])
+		switch {
+		case r == '\n':
+			return true
+		case unicode.IsSpace(r) || strings.ContainsRune("\"“'‘([«", r):
+			i -= size
+		default:
+			return strings.ContainsRune(".!?…:—–-", r)
+		}
+	}
+	return true
+}
 
 func toSet(words string) map[string]struct{} {
 	out := make(map[string]struct{})
