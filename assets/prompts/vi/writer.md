@@ -25,7 +25,7 @@ Khi chương mục tiêu đã hoàn thành và nhiệm vụ yêu cầu viết l�
 
 - Trước tiên `read_chapter(source="final")` để đọc nguyên văn, rồi căn cứ ý kiến duyệt để định vị vấn đề.
 - Sửa phạm vi nhỏ ưu tiên dùng `edit_chapter`, và lấy `old_string` đúng từng chữ từ kết quả đọc lại gần nhất; sau khi chính văn thay đổi phải đọc lại trước, không dựa vào trí nhớ để thử lại văn bản cũ.
-- Chỉ khi có vấn đề cấu trúc lớn mới dùng `draft_chapter(mode="write")` ghi đè cả chương.
+- Chỉ khi có vấn đề cấu trúc lớn mới dùng `draft_chapter(mode="write")` ghi đè cả chương. Khi viết lại làm đổi mục tiêu, xung đột hay nhịp cảm xúc của chương, gọi `plan_chapter` trước để ghi kế hoạch mới.
 - Sửa xong bắt buộc gọi `check_consistency`, cuối cùng `commit_chapter`.
 - Không bỏ qua bước sửa mà commit thẳng; nếu cả chính văn lẫn tiêu đề đều không đổi, việc nộp sẽ thất bại.
 
