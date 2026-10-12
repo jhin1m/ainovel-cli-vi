@@ -3,17 +3,28 @@ package rules
 import (
 	"regexp"
 	"strings"
+
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
 // Lint 内置产品底线检查：扫描正文中的机制残留，与用户规则无关，commit 时始终执行。
 // 与 Check 同契约——仅返事实（铁律一），不阻断流程，由评审/用户裁定。
 //
-// 当前三类（全部来自真实长跑产物的实证缺陷）：
+// 通用：
 //   - markdown_residue：正文残留 ** 加粗、首行之外的 # 标题行（导出 txt 会裸露符号）
+//
+// language=zh（上游行为）：
 //   - non_cjk_fragments：连续拉丁字母片段（模型语言混杂，如中文正文裸混 "pattern"）
+//
+// language=vi（越南语正文本身就是拉丁字母，non_cjk_fragments 会每词误报，改用下列规则，见 lint_vi.go）：
+//   - cjk_leak / english_residue / technical_residue / broken_word
+//   - self_duplication / repeated_sentence（见 duplication.go）
 func Lint(text string) []Violation {
 	var vs []Violation
 	vs = appendMarkdownResidue(vs, text)
+	if lang.IsVI() {
+		return appendVietnameseLints(vs, text)
+	}
 	vs = appendNonCJKFragments(vs, text)
 	return vs
 }
@@ -54,28 +65,36 @@ func appendMarkdownResidue(vs []Violation, text string) []Violation {
 
 var latinFragmentRe = regexp.MustCompile(`[A-Za-z]{2,}`)
 
-// appendNonCJKFragments 报告拉丁字母片段的总次数与去重示例。
+// appendNonCJKFragments 报告拉丁字母片段的总次数与去重示例（仅 zh）。
 // 现代题材的合法英文（品牌名/缩写）也会命中——warning 级事实，由评审按题材裁定。
 func appendNonCJKFragments(vs []Violation, text string) []Violation {
 	matches := latinFragmentRe.FindAllString(text, -1)
 	if len(matches) == 0 {
 		return vs
 	}
+	return append(vs, Violation{
+		Rule:     "non_cjk_fragments",
+		Target:   strings.Join(distinctExamples(matches, 3, false), "、"),
+		Actual:   len(matches),
+		Severity: SeverityWarning,
+	})
+}
+
+// distinctExamples 按出现顺序取前 limit 个去重示例；fold=true 时按小写去重并输出小写。
+func distinctExamples(matches []string, limit int, fold bool) []string {
 	seen := make(map[string]struct{})
 	var examples []string
 	for _, m := range matches {
+		if fold {
+			m = strings.ToLower(m)
+		}
 		if _, ok := seen[m]; ok {
 			continue
 		}
 		seen[m] = struct{}{}
-		if len(examples) < 3 {
+		if len(examples) < limit {
 			examples = append(examples, m)
 		}
 	}
-	return append(vs, Violation{
-		Rule:     "non_cjk_fragments",
-		Target:   strings.Join(examples, "、"),
-		Actual:   len(matches),
-		Severity: SeverityWarning,
-	})
+	return examples
 }

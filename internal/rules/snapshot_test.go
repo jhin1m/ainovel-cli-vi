@@ -3,6 +3,9 @@ package rules
 import (
 	"strings"
 	"testing"
+	"unicode"
+
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
 func TestBuildSnapshot_FieldOverridePrecedence(t *testing.T) {
@@ -87,6 +90,7 @@ func TestBuildSnapshot_DegradedPropagates(t *testing.T) {
 }
 
 func TestSystemDefaults_MatchesLegacyDefaultMD(t *testing.T) {
+	useLang(t, lang.ZH)
 	d := SystemDefaults().Structured
 	if len(d.ForbiddenPhrases) != 4 {
 		t.Fatalf("默认禁语应为 4 条，得到 %d", len(d.ForbiddenPhrases))
@@ -94,4 +98,34 @@ func TestSystemDefaults_MatchesLegacyDefaultMD(t *testing.T) {
 	if len(d.FatigueWords) != 16 {
 		t.Fatalf("默认疲劳词应为 16 条，得到 %d", len(d.FatigueWords))
 	}
+}
+
+// language=vi 用越南语基线：不得混入中文词（否则永远命不中，等于没有基线）。
+func TestSystemDefaults_Vietnamese(t *testing.T) {
+	c := SystemDefaults()
+	if c.Source != "system_defaults" {
+		t.Fatalf("source = %q", c.Source)
+	}
+	d := c.Structured
+	if len(d.ForbiddenPhrases) == 0 || len(d.FatigueWords) == 0 {
+		t.Fatalf("vi 基线不应为空: %+v", d)
+	}
+	for _, w := range append(append([]string{}, d.ForbiddenPhrases...), keys(d.FatigueWords)...) {
+		for _, r := range w {
+			if unicode.Is(unicode.Han, r) {
+				t.Fatalf("vi 基线混入汉字: %q", w)
+			}
+		}
+	}
+	if d.FatigueWords["không khỏi"] != 1 {
+		t.Errorf("không khỏi 阈值应为 1: %v", d.FatigueWords)
+	}
+}
+
+func keys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
