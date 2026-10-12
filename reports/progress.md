@@ -26,7 +26,7 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 | 2 | tools | xong | check-han tools 350→0; alias premise tiếng Việt; read_chapter word_count theo WordCount |
 | 2 | rest | xong | check-han toàn repo = 0; token ước lượng byte/3 khi vi; userrules dựng lại mặc định khi đổi ngôn ngữ |
 | 2b | patches: port bản vá quy hoạch kentjuno (dcc09e1 phần domain/tools/store, 998665f, 9b5c138, 7c615ec) | xong | sau Đợt 2 để tránh đụng file; chỉ port lỗi còn tái hiện |
-| 3 | check-han=0, docs (README.vi, SYNC, NOTICE), smoke test, push, final-status | chờ | controller |
+| 3 | check-han=0, docs (README.vi, SYNC, NOTICE), smoke test, push, final-status | đang làm | check-han=0 ✓, docs ✓, review logic ✓ (sửa 3/4, #4 giữ theo D3), smoke run1 (binary sớm) 3 chương OK; smoke run2 (binary cuối) đang chạy |
 
 ## Nhật ký
 - 2026-10-12: tạo branch vi, baseline xanh.
@@ -39,3 +39,4 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 - host, tools đã merge + push. Còn lại (model=626, log=39) đều trong phạm vi rest. Smoke sớm run1 đang chạy ở ~/projects/ainovel-smoke/run1 (binary trước khi merge host/tools).
 - rest đã merge; check-han model=0 log=0 asset=0. Ghi chú: userrules lưu "language" trong file snapshot qua wrapper (nếu bị ghi lại mất trường thì relocalize lại, idempotent) — giữ nguyên. Đã bỏ bản sao bảng zh (66944bb). Đợt 2b patches khởi chạy.
 - patches DONE, đã merge: port SkeletonArcs, StalledOutline, chuẩn hoá tiêu đề khi xuất, plan_chapter cho hàng chờ viết lại, kiểm tra id phục bút; bỏ RenumberVolumes, OversizedArc, Router directive, labels.go (lý do trong final-status). Đợt 3 bắt đầu.
+- Review logic (reports/review-vi-logic.md): sửa english_residue báo nhầm (the/like/up/off/out/one/will, tên riêng giữa câu), nhãn xuất bản theo lang, replay pending commit bỏ kiểm tra id mới. #4 (LoadOptions rỗng = zh) giữ theo D3.
