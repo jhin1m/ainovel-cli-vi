@@ -366,7 +366,11 @@ func (s *Store) ReviseOutline(fromChapter int, replacement []domain.OutlineEntry
 		protected = latest
 	}
 	if fromChapter <= protected {
-		return 0, fmt.Errorf("chương %d đã hoàn thành hoặc đang viết; sửa dàn ý phải bắt đầu sau chương %d: %w",
+		// 只报"不许改"会把架构师逼进死路（实测连试 from=21/22/13 再退到
+		// save_foundation(outline) 全被拒，空转到熔断），错误必须说明返工归谁负责。
+		return 0, fmt.Errorf("chương %d đã hoàn thành hoặc đang viết; revise_outline chỉ sửa được các chương chưa diễn ra, phải bắt đầu sau chương %d. "+
+			"Các chương đã viết trong pending_rewrites không thuộc phạm vi sửa dàn ý: writer viết lại theo hàng đợi (mục tiêu viết lại ghi qua plan_chapter); "+
+			"nếu đang có phản hồi dàn ý chờ xử lý mà không có chương tương lai nào cần sửa, hãy gọi resolve_outline_feedback xác nhận quy hoạch hiện có vẫn phù hợp rồi kết thúc: %w",
 			fromChapter, protected, errs.ErrToolPrecondition)
 	}
 
