@@ -97,7 +97,7 @@ func (n *Notifier) allows(kind string) bool {
 // deliver 同步执行一次发送并记录失败，由 Send 在 goroutine 中调用。
 func (n *Notifier) deliver(nt Notification) {
 	if err := n.deliverError(nt); err != nil {
-		slog.Warn("通知发送失败", "module", "notify", "kind", nt.Kind, "err", err)
+		slog.Warn("gửi thông báo thất bại", "module", "notify", "kind", nt.Kind, "err", err)
 	}
 }
 
@@ -131,7 +131,7 @@ func runCommand(ctx context.Context, command string, nt Notification) error {
 	cmd.Stdin = strings.NewReader(string(payload))
 	if err := cmd.Run(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("通知命令超时: %w", ctxErr)
+			return fmt.Errorf("lệnh thông báo quá thời gian: %w", ctxErr)
 		}
 		return err
 	}
@@ -157,12 +157,12 @@ func runSystem(ctx context.Context, nt Notification) error {
 		return exec.CommandContext(ctx, "osascript", "-e", script).Run()
 	case "linux":
 		if _, err := exec.LookPath("notify-send"); err != nil {
-			slog.Info("通知降级为日志（无 notify-send）", "module", "notify", "title", nt.Title, "body", nt.Body)
+			slog.Info("thông báo hạ cấp thành log (không có notify-send)", "module", "notify", "title", nt.Title, "body", nt.Body)
 			return nil
 		}
 		return exec.CommandContext(ctx, "notify-send", nt.Title, nt.Body).Run()
 	default:
-		slog.Info("通知降级为日志（平台无 system 通道）", "module", "notify", "title", nt.Title, "body", nt.Body)
+		slog.Info("thông báo hạ cấp thành log (nền tảng không có kênh system)", "module", "notify", "title", nt.Title, "body", nt.Body)
 		return nil
 	}
 }
@@ -189,7 +189,7 @@ func findPowerShell() (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("Windows 通知需要 PowerShell，但系统未找到 powershell.exe 或 pwsh.exe")
+	return "", fmt.Errorf("thông báo trên Windows cần PowerShell, nhưng không tìm thấy powershell.exe hoặc pwsh.exe")
 }
 
 const windowsNotificationScript = `$ErrorActionPreference = 'Stop'

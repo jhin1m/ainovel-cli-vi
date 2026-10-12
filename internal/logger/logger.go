@@ -40,9 +40,9 @@ func FileLogger(outputDir, filename string) (*slog.Logger, func(), error) {
 		return slog.Default(), func() {}, err
 	}
 	logger, sessionID := newSessionLogger(f, slog.LevelDebug)
-	logger.Info("日志会话开始", "module", "logger", "session_id", sessionID)
+	logger.Info("bắt đầu phiên log", "module", "logger", "session_id", sessionID)
 	return logger, func() {
-		logger.Info("日志会话结束", "module", "logger", "session_id", sessionID)
+		logger.Info("kết thúc phiên log", "module", "logger", "session_id", sessionID)
 		_ = f.Close()
 	}, nil
 }
@@ -64,10 +64,10 @@ func SetupFile(outputDir, filename string, alsoStderr bool, sessionAttrs ...slog
 	previous := slog.Default()
 	logger, sessionID := newSessionLogger(w, slog.LevelDebug, sessionAttrs...)
 	slog.SetDefault(logger)
-	logger.Info("日志会话开始", "module", "logger", "session_id", sessionID)
+	logger.Info("bắt đầu phiên log", "module", "logger", "session_id", sessionID)
 
 	return func() {
-		logger.Info("日志会话结束", "module", "logger", "session_id", sessionID)
+		logger.Info("kết thúc phiên log", "module", "logger", "session_id", sessionID)
 		slog.SetDefault(previous)
 		_ = f.Close()
 	}, nil

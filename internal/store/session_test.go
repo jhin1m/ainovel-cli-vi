@@ -3,11 +3,14 @@ package store
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/domain"
 )
 
 // TestSessionStore_MetaInjected_AssistantWithUsage 验证只有"assistant + has Usage"
@@ -155,4 +158,37 @@ func readJSONL(t *testing.T, path string) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+func TestExtractChapterVietnameseAndChinese(t *testing.T) {
+	cases := map[string]string{
+		"Viết Chương 12 theo dàn ý":  "ch12",
+		"viết chương 3":              "ch03",
+		"CHƯƠNG 7":                   "ch07",
+		"写第12章":                      "ch12",
+		"第 5 章 返工":                   "ch05",
+		"Duyệt cung truyện hiện tại": "",
+		"Chương 0":                   "",
+	}
+	for task, want := range cases {
+		if got := extractChapter(task); got != want {
+			t.Errorf("extractChapter(%q) = %q, want %q", task, got, want)
+		}
+	}
+}
+
+func TestCompactArgsContentUsesVietnameseLabel(t *testing.T) {
+	content := strings.Repeat("chữ ", 1500)
+	args, _ := json.Marshal(map[string]any{"chapter": 4, "content": content})
+	got := compactToolCall(&agentcore.ToolCall{Name: "draft_chapter", Args: args})
+	var parsed struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(got.Args, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("[session_compact: Nội dung chương 4 %d chữ | xem drafts/04.draft.md]", domain.WordCount(content))
+	if parsed.Content != want {
+		t.Fatalf("content = %q, want %q", parsed.Content, want)
+	}
 }
