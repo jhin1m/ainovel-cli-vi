@@ -21,9 +21,9 @@ func NewExpandNextArcTool(store *store.Store) *ExpandNextArcTool {
 }
 
 func (t *ExpandNextArcTool) Name() string  { return "expand_next_arc" }
-func (t *ExpandNextArcTool) Label() string { return "展开下一弧" }
+func (t *ExpandNextArcTool) Label() string { return "Triển khai cung tiếp theo" }
 func (t *ExpandNextArcTool) Description() string {
-	return "展开当前已完成弧之后的下一骨架弧。目标卷弧由系统根据进度和大纲确定；只需提交结合已完成事实校准后的 title、goal 和 chapters。"
+	return "Triển khai cung khung kế tiếp sau cung đã hoàn thành hiện tại. Quyển/cung đích do hệ thống xác định theo tiến độ và dàn ý; chỉ cần nộp title, goal và chapters đã hiệu chỉnh theo các dữ kiện đã hoàn thành."
 }
 
 func (t *ExpandNextArcTool) ReadOnly(json.RawMessage) bool        { return false }
@@ -32,15 +32,15 @@ func (t *ExpandNextArcTool) StrictSchema() bool                   { return true 
 
 func (t *ExpandNextArcTool) Schema() map[string]any {
 	chapter := schema.Object(
-		schema.Property("title", schema.String("章节标题")).Required(),
-		schema.Property("core_event", schema.String("本章核心事件")).Required(),
-		schema.Property("hook", schema.String("章末钩子")).Required(),
-		schema.Property("scenes", schema.Array("计划场景；无则为空数组", schema.String(""))).Required(),
+		schema.Property("title", schema.String("Tiêu đề chương")).Required(),
+		schema.Property("core_event", schema.String("Sự kiện cốt lõi của chương")).Required(),
+		schema.Property("hook", schema.String("Móc câu cuối chương")).Required(),
+		schema.Property("scenes", schema.Array("Các cảnh dự kiến; không có thì để mảng rỗng", schema.String(""))).Required(),
 	)
 	return schema.Object(
-		schema.Property("title", schema.String("结合已完成事实校准后的弧标题")).Required(),
-		schema.Property("goal", schema.String("结合已完成事实校准后的弧目标")).Required(),
-		schema.Property("chapters", schema.Array("该弧的详细章节计划", chapter)).Required(),
+		schema.Property("title", schema.String("Tiêu đề cung đã hiệu chỉnh theo dữ kiện đã hoàn thành")).Required(),
+		schema.Property("goal", schema.String("Mục tiêu cung đã hiệu chỉnh theo dữ kiện đã hoàn thành")).Required(),
+		schema.Property("chapters", schema.Array("Kế hoạch chương chi tiết của cung này", chapter)).Required(),
 	)
 }
 

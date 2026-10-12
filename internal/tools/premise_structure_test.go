@@ -4,9 +4,18 @@ import (
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/lang"
 )
 
+// withTestLang đặt ngôn ngữ cho một test rồi trả lại tiếng Việt (mặc định) khi xong.
+func withTestLang(t *testing.T, c lang.Code) {
+	t.Helper()
+	lang.Set(c)
+	t.Cleanup(func() { lang.Set(lang.VI) })
+}
+
 func TestParsePremiseSections(t *testing.T) {
+	withTestLang(t, lang.ZH)
 	premise := `# Premise
 
 ## 题材和基调
@@ -38,6 +47,7 @@ func TestParsePremiseSections(t *testing.T) {
 }
 
 func TestPremiseStructure(t *testing.T) {
+	withTestLang(t, lang.ZH)
 	premise := `## 题材和基调
 升级流，偏冷硬。
 
@@ -83,6 +93,7 @@ func TestPremiseStructure(t *testing.T) {
 }
 
 func TestPremiseStructureShortAcceptsLegacyHeadingAlias(t *testing.T) {
+	withTestLang(t, lang.ZH)
 	premise := `## 题材和基调
 单卷高压营救。
 
@@ -117,5 +128,110 @@ func TestPremiseStructureShortAcceptsLegacyHeadingAlias(t *testing.T) {
 	structure := premiseStructure(premise, domain.PlanningTierShort)
 	if ready, _ := structure["template_ready"].(bool); !ready {
 		t.Fatalf("expected short template_ready, got %+v", structure)
+	}
+}
+
+func TestParsePremiseSectionsVietnamese(t *testing.T) {
+	withTestLang(t, lang.VI)
+	premise := `# Tiền đề câu chuyện
+
+## Thể loại và giọng điệu
+Huyền huyễn phương Đông, trưởng thành lạnh lùng.
+
+## Định vị thể loại (độc giả mục tiêu, điểm hấp dẫn cốt lõi)
+Thăng cấp, nhắm tới độc giả thích nhịp nhanh.
+
+## xung đột cốt lõi
+Nhân vật chính phải chọn giữa môn quy và lương tâm.
+
+## Bước ngoặt giữa truyện
+Con đường tu luyện cũ mất tác dụng.
+`
+
+	sections := parsePremiseSections(premise)
+	for _, heading := range []string{"Thể loại và giọng điệu", "Định vị thể loại", "Xung đột cốt lõi", "Chuyển hướng giữa truyện"} {
+		if sections[heading] == "" {
+			t.Fatalf("thiếu mục %q, có %+v", heading, sections)
+		}
+	}
+}
+
+func TestPremiseStructureVietnameseLong(t *testing.T) {
+	withTestLang(t, lang.VI)
+	premise := `# Tiền đề câu chuyện
+
+## Thể loại và giọng điệu
+a
+## Định vị thể loại
+a
+## Xung đột cốt lõi
+a
+## Mục tiêu nhân vật chính
+a
+## Hướng kết cục (hướng mang tính chủ đề)
+a
+## Vùng cấm khi viết
+a
+## Điểm bán khác biệt
+a
+## Móc câu khác biệt: điểm độc đáo nhất
+a
+## Lời hứa cốt lõi
+a
+## Động cơ câu chuyện
+a
+## Tuyến quan hệ/trưởng thành
+a
+## Lộ trình thăng cấp
+a
+## Chuyển hướng giữa truyện
+a
+`
+
+	structure := premiseStructure(premise, domain.PlanningTierLong)
+	if ready, _ := structure["template_ready"].(bool); ready {
+		t.Fatalf("thiếu Câu hỏi kết cục nhưng template_ready=true: %+v", structure)
+	}
+	missing, _ := structure["missing"].([]string)
+	if len(missing) != 1 || missing[0] != "Câu hỏi kết cục" {
+		t.Fatalf("missing phải là tiêu đề tiếng Việt [Câu hỏi kết cục], có %+v", missing)
+	}
+
+	structure = premiseStructure(premise+"## Câu hỏi kết cục\na\n", domain.PlanningTierLong)
+	if ready, _ := structure["template_ready"].(bool); !ready {
+		t.Fatalf("premise tiếng Việt đủ mục phải template_ready, có %+v", structure)
+	}
+	found, _ := structure["found"].([]string)
+	if len(found) != 14 || found[0] != "Thể loại và giọng điệu" {
+		t.Fatalf("found phải gồm 14 tiêu đề tiếng Việt, có %+v", found)
+	}
+}
+
+func TestPremiseStructureVietnameseShort(t *testing.T) {
+	withTestLang(t, lang.VI)
+	premise := `## Thể loại và giọng điệu
+a
+## Định vị thể loại
+a
+## Xung đột cốt lõi
+a
+## Mục tiêu nhân vật chính
+a
+## Hướng kết cục
+a
+## Vùng cấm khi viết
+a
+## Điểm bán khác biệt
+a
+## Móc câu khác biệt
+a
+## Lời hứa cốt lõi
+a
+## Vì sao truyện này phù hợp với dạng truyện ngắn/khép lại trong một quyển
+a
+`
+	structure := premiseStructure(premise, domain.PlanningTierShort)
+	if ready, _ := structure["template_ready"].(bool); !ready {
+		t.Fatalf("premise ngắn tiếng Việt phải template_ready, có %+v", structure)
 	}
 }
