@@ -191,13 +191,13 @@ func (t *UsageTracker) noteCacheBreak(role, task string, u agentcore.Usage) {
 		return
 	}
 	gap := now.Sub(prevAt).Round(time.Second)
-	hint := "疑似服务端逐出/路由漂移（中转站轮询上游是常见原因）"
+	hint := "nghi do máy chủ loại bỏ cache/định tuyến trôi (relay luân phiên upstream là nguyên nhân thường gặp)"
 	if gap > time.Hour {
-		hint = "疑似 1h TTL 过期"
+		hint = "nghi do hết hạn TTL 1h"
 	} else if gap > 5*time.Minute {
-		hint = "疑似 5m TTL 过期"
+		hint = "nghi do hết hạn TTL 5m"
 	}
-	slog.Warn("缓存链断裂：前缀未缩短而命中骤降",
+	slog.Warn("chuỗi cache bị đứt: tiền tố không ngắn đi nhưng tỉ lệ trúng tụt mạnh",
 		"module", "usage", "role", role,
 		"cache_read", fmt.Sprintf("%d→%d", prevRead, u.CacheRead),
 		"prefix", fmt.Sprintf("%d→%d", prevPrefix, prefix),
@@ -221,7 +221,7 @@ func (t *UsageTracker) flagMissingUsage(agentName string) {
 	t.loggedMissingUsage = true
 	t.mu.Unlock()
 	if shouldLog {
-		slog.Warn("LLM 响应未携带 usage 数据，缓存/成本面板将无累计——通常是上游 streaming 未按 OpenAI include_usage 协议发 final usage chunk",
+		slog.Warn("phản hồi LLM không kèm dữ liệu usage, bảng cache/chi phí sẽ không cộng dồn — thường do streaming upstream không gửi final usage chunk theo giao thức include_usage của OpenAI",
 			"module", "usage", "agent", agentName)
 		if t.onMissingUsage != nil {
 			t.onMissingUsage()
@@ -529,7 +529,7 @@ func (t *UsageTracker) autoSaveLoop(ctx context.Context) {
 	var pending bool
 	flush := func() {
 		if err := t.SaveNow(); err != nil {
-			slog.Warn("usage 落盘失败", "module", "usage", "err", err)
+			slog.Warn("ghi usage xuống đĩa thất bại", "module", "usage", "err", err)
 		}
 		pending = false
 	}

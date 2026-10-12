@@ -10,14 +10,14 @@ import (
 // - DeltaToolCall 只对已知的长内容工具（如 draft_chapter.content）抽取字段流出；其他工具的参数 JSON 全部丢弃
 func (o *observer) handleSubagentDelta(p *agentcore.ProgressPayload) {
 	if p.DeltaKind != agentcore.DeltaToolCall {
-		o.updateModelState(p.Agent, "生成回复")
+		o.updateModelState(p.Agent, "Đang tạo câu trả lời")
 		o.emitStreamDelta(p.Delta, false)
 		return
 	}
 	if p.Tool == "" {
 		return // 工具名未就绪，下一个 delta 再试
 	}
-	o.updateModelState(p.Agent, "生成 "+p.Tool)
+	o.updateModelState(p.Agent, "Đang tạo "+p.Tool)
 
 	cur, ok := o.streamExtractors[p.Agent]
 	// 同工具调用 args 已闭合（顶层 } 命中）后，仍可能收到 trailing delta：
