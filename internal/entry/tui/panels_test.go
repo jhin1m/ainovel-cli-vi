@@ -204,3 +204,42 @@ func TestSidebarFieldLabelsFitLabelColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestWrapRunesBreaksVietnameseAtWordBoundary(t *testing.T) {
+	text := "Gió đêm từ khe núi thổi xuống, mang theo mùi đá ướt và tro hương đã nguội."
+	lines := wrapRunes(text, 20)
+	words := map[string]bool{}
+	for _, w := range strings.Fields(text) {
+		words[w] = true
+	}
+	for _, line := range lines {
+		if lipgloss.Width(line) > 20 {
+			t.Fatalf("dòng vượt độ rộng: %q", line)
+		}
+		for _, w := range strings.Fields(line) {
+			if !words[w] {
+				t.Fatalf("từ bị cắt đôi khi xuống dòng: %q trong %q", w, lines)
+			}
+		}
+	}
+	if got := strings.Join(lines, " "); got != text {
+		t.Fatalf("nội dung bị thay đổi sau khi xuống dòng:\n%q\n%q", got, text)
+	}
+}
+
+func TestWrapRunesKeepsHardWrapForCJKAndLongTokens(t *testing.T) {
+	cjk := strings.Repeat("秦越在材料中发现线索", 3)
+	for _, line := range wrapRunes(cjk, 20) {
+		if lipgloss.Width(line) > 20 {
+			t.Fatalf("dòng CJK vượt độ rộng: %q", line)
+		}
+	}
+	if got := wrapRunes(cjk, 20); len(got) != 3 || lipgloss.Width(got[0]) != 20 {
+		t.Fatalf("CJK phải lấp đầy từng dòng, got %q", got)
+	}
+	long := "ab " + strings.Repeat("x", 30)
+	got := wrapRunes(long, 10)
+	if got[0] != "ab xxxxxxx" {
+		t.Fatalf("token quá dài phải cắt cứng thay vì để trống cuối dòng, got %q", got)
+	}
+}

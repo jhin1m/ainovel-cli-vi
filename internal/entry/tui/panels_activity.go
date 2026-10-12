@@ -556,24 +556,44 @@ func wrapRunes(text string, width int) []string {
 	}
 
 	var lines []string
-	var current strings.Builder
+	var current []rune
 	currentWidth := 0
+	// lastSpace 是当前行最后一个空格的下标；按空格分词的文字（如越南语）在此断行，
+	// 避免把一个词拆到两行。中文等无空格文本仍逐字断行。
+	lastSpace := -1
 
 	for _, r := range text {
 		rw := lipgloss.Width(string(r))
 		if currentWidth > 0 && currentWidth+rw > width {
-			lines = append(lines, strings.TrimRight(current.String(), " "))
-			current.Reset()
-			currentWidth = 0
 			if r == ' ' {
+				lines = append(lines, strings.TrimRight(string(current), " "))
+				current, currentWidth, lastSpace = current[:0], 0, -1
 				continue
 			}
+			// 只在被带到下一行的尾词不超过半行时按词断行，
+			// 否则（超长 token、中英混排远处的空格）退回逐字硬断，避免行尾大片留白。
+			tail := []rune(nil)
+			if lastSpace >= 0 {
+				tail = current[lastSpace+1:]
+			}
+			if lastSpace > 0 && lipgloss.Width(string(tail)) <= width/2 {
+				lines = append(lines, strings.TrimRight(string(current[:lastSpace]), " "))
+				current = append([]rune(nil), tail...)
+				currentWidth = lipgloss.Width(string(current))
+			} else {
+				lines = append(lines, strings.TrimRight(string(current), " "))
+				current, currentWidth = current[:0], 0
+			}
+			lastSpace = -1
 		}
-		current.WriteRune(r)
+		if r == ' ' {
+			lastSpace = len(current)
+		}
+		current = append(current, r)
 		currentWidth += rw
 	}
-	if current.Len() > 0 {
-		lines = append(lines, strings.TrimRight(current.String(), " "))
+	if len(current) > 0 {
+		lines = append(lines, strings.TrimRight(string(current), " "))
 	}
 	if len(lines) == 0 {
 		return []string{""}
