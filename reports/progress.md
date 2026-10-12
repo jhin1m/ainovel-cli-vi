@@ -20,7 +20,7 @@ Khởi động lại: đọc file này trước, rồi `git log --oneline vi`, `
 | 0 | khung ngôn ngữ (config, lang, assets loader) + test | xong | bfa52dd |
 | 0 | scripts/check-han | xong | baseline: reports/check-han-baseline.txt (model=2109 log=93 asset thiếu 39) |
 | 1 | prompts | đang chạy | worktree ~/projects/ainovel-wt/prompts, branch vi-prompts, agent herdr `prompts` |
-| 1 | rules + domain | chờ | worker |
+| 1 | rules + domain | đang chạy | worktree ~/projects/ainovel-wt/rules, branch vi-rules, agent herdr `rules` |
 | 1 | tui | đang chạy | worktree ~/projects/ainovel-wt/tui, branch vi-tui, agent herdr `tui` |
 | 2 | host | chờ | worker |
 | 2 | tools | chờ | worker |
