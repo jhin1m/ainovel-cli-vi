@@ -30,7 +30,7 @@ func TestCommandInputHighlightsOnlyRegisteredCommands(t *testing.T) {
 		}
 	}
 
-	for _, input := range []string{"普通输入", "/con", "/unknown"} {
+	for _, input := range []string{"văn bản thường", "/con", "/unknown"} {
 		m.textarea.SetValue(input)
 		m.syncCommandInputHighlight()
 		if m.commandToken != "" {
@@ -46,7 +46,7 @@ func TestCommandInputDoesNotHighlightArguments(t *testing.T) {
 
 	m := Model{textarea: textarea.New()}
 	m.textarea.Focus()
-	m.textarea.SetValue("/reopen 继续创作")
+	m.textarea.SetValue("/reopen viết tiếp")
 	m.textarea.CursorEnd()
 	m.syncCommandInputHighlight()
 
@@ -55,7 +55,7 @@ func TestCommandInputDoesNotHighlightArguments(t *testing.T) {
 	if stripped := ansi.Strip(view); stripped != ansi.Strip(plainView) {
 		t.Fatalf("高亮不应改变输入内容: %q", stripped)
 	}
-	if !strings.Contains(view, "/reopen"+resetForeground+" 继续创作") {
+	if !strings.Contains(view, "/reopen"+resetForeground+" viết tiếp") {
 		t.Fatalf("命令后的参数没有恢复正文颜色: %q", view)
 	}
 }

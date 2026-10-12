@@ -55,7 +55,7 @@ func (s *reportState) setContent(contentW int) {
 	case s.report != nil:
 		s.viewport.SetContent(renderReportText(*s.report, contentW, s.exportPath, s.exportErr, s.startedAt, s.finishedAt))
 	default:
-		s.viewport.SetContent("诊断报告不可用")
+		s.viewport.SetContent("Báo cáo chẩn đoán không khả dụng")
 	}
 }
 
@@ -86,34 +86,34 @@ func renderReportText(report diag.Report, width int, exportPath string, exportEr
 	// 脱敏诊断已导出 → 引导用户贴 issue
 	if exportPath != "" {
 		exportStyle := lipgloss.NewStyle().Foreground(colorAccent2)
-		b.WriteString(exportStyle.Render("已导出脱敏诊断（可贴到 GitHub issue）"))
+		b.WriteString(exportStyle.Render("Đã xuất bản chẩn đoán ẩn danh (có thể dán vào GitHub issue)"))
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(wrapText(exportPath, width)))
 		b.WriteString("\n\n")
 	} else if exportErr != nil {
-		b.WriteString(lipgloss.NewStyle().Foreground(colorError).Render("脱敏诊断导出失败：" + exportErr.Error()))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorError).Render("Xuất bản chẩn đoán ẩn danh thất bại: " + exportErr.Error()))
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(titleStyle.Render("概览"))
+	b.WriteString(titleStyle.Render("Tổng quan"))
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("开始 "))
+	b.WriteString(dimStyle.Render("Bắt đầu "))
 	b.WriteString(formatReportTime(startedAt))
 	if !finishedAt.IsZero() {
-		b.WriteString(dimStyle.Render("  完成 "))
+		b.WriteString(dimStyle.Render("  Xong "))
 		b.WriteString(formatReportTime(finishedAt))
 	}
 	b.WriteString("\n\n")
 
 	// 第一行：章节 + 字数
-	b.WriteString(mutedStyle.Render("章节 "))
+	b.WriteString(mutedStyle.Render("Chương "))
 	b.WriteString(fmt.Sprintf("%d/%d", st.CompletedChapters, st.TotalChapters))
-	b.WriteString(mutedStyle.Render("  字数 "))
+	b.WriteString(mutedStyle.Render("  Số chữ "))
 	b.WriteString(fmt.Sprintf("%d", st.TotalWords))
 	if st.AvgWordsPerCh > 0 {
 		b.WriteString(dimStyle.Render(fmt.Sprintf(" (%d/ch)", st.AvgWordsPerCh)))
 	}
-	b.WriteString(mutedStyle.Render("  阶段 "))
+	b.WriteString(mutedStyle.Render("  Giai đoạn "))
 	b.WriteString(st.Phase)
 	if st.Flow != "" && st.Flow != "writing" {
 		b.WriteString(mutedStyle.Render("/"))
@@ -122,29 +122,29 @@ func renderReportText(report diag.Report, width int, exportPath string, exportEr
 	b.WriteString("\n")
 
 	// 第二行：评审 + 改写 + 均分
-	b.WriteString(mutedStyle.Render("评审 "))
-	b.WriteString(fmt.Sprintf("%d次", st.ReviewCount))
+	b.WriteString(mutedStyle.Render("Duyệt "))
+	b.WriteString(fmt.Sprintf("%d lần", st.ReviewCount))
 	if st.RewriteCount > 0 {
-		b.WriteString(mutedStyle.Render("  改写 "))
-		b.WriteString(fmt.Sprintf("%d次", st.RewriteCount))
+		b.WriteString(mutedStyle.Render("  Viết lại "))
+		b.WriteString(fmt.Sprintf("%d lần", st.RewriteCount))
 	}
 	if st.AvgReviewScore > 0 {
-		b.WriteString(mutedStyle.Render("  均分 "))
+		b.WriteString(mutedStyle.Render("  Điểm TB "))
 		b.WriteString(fmt.Sprintf("%.1f", st.AvgReviewScore))
 	}
 	b.WriteString("\n")
 
 	// 第三行：伏笔 + 规划
 	if st.ForeshadowOpen > 0 || st.ForeshadowStale > 0 {
-		b.WriteString(mutedStyle.Render("伏笔 "))
-		b.WriteString(fmt.Sprintf("打开%d", st.ForeshadowOpen))
+		b.WriteString(mutedStyle.Render("Phục bút "))
+		b.WriteString(fmt.Sprintf("mở %d", st.ForeshadowOpen))
 		if st.ForeshadowStale > 0 {
-			b.WriteString(lipgloss.NewStyle().Foreground(colorReview).Render(fmt.Sprintf(" 停滞%d", st.ForeshadowStale)))
+			b.WriteString(lipgloss.NewStyle().Foreground(colorReview).Render(fmt.Sprintf(" đình trệ %d", st.ForeshadowStale)))
 		}
 		b.WriteString("\n")
 	}
 	if st.PlanningTier != "" {
-		b.WriteString(mutedStyle.Render("规划 "))
+		b.WriteString(mutedStyle.Render("Quy hoạch "))
 		b.WriteString(st.PlanningTier)
 		b.WriteString("\n")
 	}
@@ -153,13 +153,13 @@ func renderReportText(report diag.Report, width int, exportPath string, exportEr
 	b.WriteString("\n")
 	findings := report.Findings
 	if len(findings) == 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Render("未发现问题"))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Render("Không phát hiện vấn đề"))
 		b.WriteString("\n")
 		return b.String()
 	}
 
 	criticals, warnings, infos := countSeverities(findings)
-	b.WriteString(titleStyle.Render("发现"))
+	b.WriteString(titleStyle.Render("Phát hiện"))
 	b.WriteString(" ")
 	b.WriteString(dimStyle.Render(formatSeverityCounts(criticals, warnings, infos)))
 	b.WriteString("\n")
@@ -171,7 +171,7 @@ func renderReportText(report diag.Report, width int, exportPath string, exportEr
 
 	if len(report.Actions) > 0 {
 		b.WriteString("\n")
-		b.WriteString(titleStyle.Render("可执行动作"))
+		b.WriteString(titleStyle.Render("Hành động khả thi"))
 		b.WriteString(" ")
 		b.WriteString(dimStyle.Render(fmt.Sprintf("(%d)", len(report.Actions))))
 		b.WriteString("\n")
@@ -199,13 +199,13 @@ func renderReportLoadingText(width int, startedAt time.Time) string {
 	hintStyle := lipgloss.NewStyle().Foreground(colorDim)
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("正在生成诊断报告"))
+	b.WriteString(titleStyle.Render("Đang tạo báo cáo chẩn đoán"))
 	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("开始时间 " + formatReportTime(startedAt)))
+	b.WriteString(hintStyle.Render("Thời điểm bắt đầu " + formatReportTime(startedAt)))
 	b.WriteString("\n\n")
-	b.WriteString(bodyStyle.Render(wrapText("正在读取当前小说 output 产物并分析流程、质量、规划和上下文问题。项目较大时可能需要几秒。", width)))
+	b.WriteString(bodyStyle.Render(wrapText("Đang đọc dữ liệu output của truyện hiện tại và phân tích các vấn đề về quy trình, chất lượng, quy hoạch và ngữ cảnh. Dự án lớn có thể mất vài giây.", width)))
 	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("Esc 可先关闭面板，后台分析完成后下次打开会重新生成。"))
+	b.WriteString(hintStyle.Render("Có thể nhấn Esc để đóng bảng trước; phân tích chạy nền xong, lần mở sau sẽ tạo lại."))
 	return b.String()
 }
 
@@ -350,8 +350,8 @@ func renderReportModal(width, height int, state *reportState) string {
 	modal := renderPaddedModalFrame(
 		boxW,
 		boxH,
-		"诊断报告",
-		"  ↑↓ 滚动 · Esc 关闭",
+		"Báo cáo chẩn đoán",
+		"  ↑↓ cuộn · Esc đóng",
 		strings.Split(state.viewport.View(), "\n"),
 	)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal)

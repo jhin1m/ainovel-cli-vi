@@ -182,15 +182,21 @@ func retryCountdown(retryAt, now time.Time) string {
 		return ""
 	}
 	secs := int((remain + time.Second - 1) / time.Second)
-	return fmt.Sprintf("%ds 后重试", secs)
+	return fmt.Sprintf("thử lại sau %ds", secs)
 }
 
 // renderDispatchSummary 渲染 DISPATCH 摘要：Agent 名用角色色，任务用淡色。
 func renderDispatchSummary(summary string, maxW int) string {
 	agentName := summary
 	taskPart := ""
-	if idx := strings.Index(summary, "（"); idx > 0 {
-		agentName = summary[:idx]
+	// host 侧摘要格式为 "agent（任务）"；同时兼容半角 "agent (任务)"，
+	// 避免摘要文案改用半角括号后 Agent 名与任务粘连。
+	idx := strings.Index(summary, "（")
+	if idx <= 0 {
+		idx = strings.Index(summary, "(")
+	}
+	if idx > 0 {
+		agentName = strings.TrimRight(summary[:idx], " ")
 		taskPart = summary[idx:]
 	}
 	displayName := agentDisplayName(agentName)
@@ -288,7 +294,7 @@ func renderEventFlowViewport(vp viewport.Model, width, height int, focused bool)
 	if focused {
 		titleColor = colorAccent
 	}
-	title := lipgloss.NewStyle().Foreground(titleColor).Render(":: 事件流")
+	title := lipgloss.NewStyle().Foreground(titleColor).Render(":: Sự kiện")
 	lineW := width - lipgloss.Width(title) - 4
 	if lineW < 0 {
 		lineW = 0
@@ -313,7 +319,7 @@ func renderStreamPanel(vp viewport.Model, width, height int, focused, running bo
 	// 分隔标题栏（始终醒目）：粗竖条前缀 + 永远 Bold + 强调色，避免与思考的淡灰斜体撞色
 	// focused 时额外下划线，区分焦点态。
 	titleStyle := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Underline(focused)
-	title := titleStyle.Render("▍实时输出")
+	title := titleStyle.Render("▍Đầu ra trực tiếp")
 	if running {
 		status := renderStreamActivity(frame)
 		title += " " + status
