@@ -61,7 +61,7 @@ func renderEPUB(
 
 	for _, ch := range chapters {
 		loc, hasLoc := locations[ch]
-		title := strings.TrimSpace(titleIdx[ch])
+		title := titleIdx.display(ch)
 		body := stripChapterTitleHeader(strings.TrimSpace(bodies[ch]), title)
 		xhtml := renderChapterXHTML(ch, title, loc, hasLoc, body)
 		if err := zipDeflate(zw, "OEBPS/"+chapterFileName(ch), xhtml); err != nil {
@@ -212,7 +212,7 @@ func renderNavXHTML(hasCover bool, chapters []int, titleIdx chapterTitleIndex) s
 	// 平铺章节列表。卷/弧分组在阅读器里反而不如单层目录清爽（阅读器自己会折叠），
 	// 而且 EPUB 3 nav 嵌套 ol 在某些阅读器上渲染怪。保持简单。
 	for _, ch := range chapters {
-		title := strings.TrimSpace(titleIdx[ch])
+		title := titleIdx.display(ch)
 		display := fmt.Sprintf("Chương %d", ch)
 		if title != "" {
 			display = fmt.Sprintf("Chương %d: %s", ch, title)

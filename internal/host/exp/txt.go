@@ -60,6 +60,9 @@ func buildLocations(volumes []domain.VolumeOutline) map[int]chapterLocation {
 // 与越南文 / 英文（# Chương 12 / ## Hồi III: ... / # Chapter 3）并存识别。
 var chapterHeaderRe = regexp.MustCompile(`^#+\s+(?:第.+?章|(?i:chương|hồi|chapter)\s*[0-9IVXLCDMivxlcdm]+(?:$|[\s:.\-–—]))`) //check-han:ok
 
+// boldLineRe 匹配整行加粗的行，提取其中文字。
+var boldLineRe = regexp.MustCompile(`^\*\*\s*([^*]+?)\s*\*\*\s*$`)
+
 // atxTitleRe 提取 ATX 标题（# 标题）的文字部分。
 var atxTitleRe = regexp.MustCompile(`^#{1,6}\s+(.+?)\s*$`)
 
@@ -80,6 +83,10 @@ func stripChapterTitleHeader(content, title string) string {
 }
 
 func isChapterTitleLine(line, title string) bool {
+	// 整行加粗（**Chương 4: …**）按标题处理，与 ATX 标题同规则判定。
+	if m := boldLineRe.FindStringSubmatch(line); m != nil {
+		line = "# " + m[1]
+	}
 	if chapterHeaderRe.MatchString(line) {
 		return true
 	}
@@ -119,7 +126,7 @@ func renderTXT(
 			}
 		}
 
-		title := strings.TrimSpace(titleIdx[ch])
+		title := titleIdx.display(ch)
 		if title != "" {
 			fmt.Fprintf(&b, "Chương %d: %s\n\n", ch, title)
 		} else {
@@ -142,4 +149,15 @@ func volumeHeading(idx int, title string) string {
 		return fmt.Sprintf("Quyển %d: %s", idx, title)
 	}
 	return fmt.Sprintf("Quyển %d", idx)
+}
+
+// titleChapterPrefixRe 匹配标题开头自带的章号（第 N 章 / Chương N / Chapter N）及其后的分隔符。
+var titleChapterPrefixRe = regexp.MustCompile(`^(?:第\s*[0-9零一二三四五六七八九十百千]+\s*章|(?i:chương|chapter)\s*\d+(?:$|[\s:：.\-–—]))[\s:：.\-–—]*`) //check-han:ok
+
+// display 返回导出用的章标题。标题里自带的章号来自模型记忆，常与真实章号不符
+// （规划期命名 Chương 19..23，落盘时实为第 1..5 章）；导出器会统一拼上真实章号，
+// 因此剥掉标题自带的章号前缀，只留章名。剥完为空则返回空串，退化为只显示章号。
+func (idx chapterTitleIndex) display(ch int) string {
+	title := strings.TrimSpace(idx[ch])
+	return strings.TrimSpace(titleChapterPrefixRe.ReplaceAllString(title, ""))
 }
