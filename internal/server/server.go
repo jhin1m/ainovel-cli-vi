@@ -132,7 +132,9 @@ func (s *Server) routes() error {
 		return fmt.Errorf("AINOVEL_PUBLIC_URL: %w", err)
 	}
 	// Route JSON thường: CSRF → bắt buộc JSON → giới hạn body → timeout.
-	s.root.Handle("/api/", httpx.Chain(s.api, crossOrigin, httpx.RequireJSON, httpx.MaxBytes(maxBodyBytes), httpx.Timeout(requestTimeout)))
+	// Recover đặt cả trong lớp timeout: TimeoutHandler chạy handler ở goroutine
+	// riêng và ném lại panic, stack trace bắt ở lớp ngoài là của TimeoutHandler.
+	s.root.Handle("/api/", httpx.Chain(s.api, crossOrigin, httpx.RequireJSON, httpx.MaxBytes(maxBodyBytes), httpx.Timeout(requestTimeout), httpx.Recover))
 	s.auth.Register(s.api)
 	keys.NewHandlers(s.keyRepo, s.catalog, s.auth, nil).Register(s.api)
 	s.api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +148,7 @@ func (s *Server) routes() error {
 // Handler trả về handler gốc đã bọc middleware chung.
 func (s *Server) Handler() http.Handler {
 	return httpx.Chain(s.root,
-		httpx.RequestContext(s.cfg.TrustedProxies),
+		httpx.RequestContext(s.cfg.TrustedProxies, s.cfg.ClientIPHeader),
 		httpx.AccessLog,
 		httpx.Recover,
 		httpx.SecurityHeaders,
@@ -194,10 +196,13 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		fn(stopCtx)
 	}
 	s.closingOnce.Do(func() { close(s.closing) })
-	httpCtx, cancelHTTP := context.WithTimeout(stopCtx, 15*time.Second)
+	// Chờ request đang chạy tối đa requestTimeout (SSE đã tự thoát nhờ closing),
+	// quá hạn thì đóng cứng để context của các request còn lại bị huỷ.
+	httpCtx, cancelHTTP := context.WithTimeout(stopCtx, requestTimeout+2*time.Second)
 	defer cancelHTTP()
-	if err := srv.Shutdown(httpCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		slog.Warn("tắt HTTP", "err", err)
+	if err := srv.Shutdown(httpCtx); err != nil {
+		slog.Warn("tắt HTTP quá hạn, đóng cứng các kết nối còn lại", "err", err)
+		_ = srv.Close()
 	}
 	s.shutdownRest(stopCtx)
 	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {

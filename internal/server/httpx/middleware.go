@@ -52,13 +52,13 @@ func ClientIPFrom(ctx context.Context) netip.Addr {
 }
 
 // RequestContext gắn request id (header X-Request-ID), IP client và logger vào context.
-func RequestContext(trusted []netip.Prefix) Middleware {
+func RequestContext(trusted []netip.Prefix, ipHeader string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var b [8]byte
 			_, _ = rand.Read(b[:])
 			id := hex.EncodeToString(b[:])
-			ip := ClientIP(r, trusted)
+			ip := ClientIP(r, trusted, ipHeader)
 			w.Header().Set("X-Request-ID", id)
 			ctx := context.WithValue(r.Context(), ctxRequestID, id)
 			ctx = context.WithValue(ctx, ctxClientIP, ip)
@@ -195,6 +195,12 @@ func CrossOrigin(trustedOrigins ...string) (Middleware, error) {
 func Timeout(d time.Duration) Middleware {
 	body := `{"error":{"code":"timeout","message":"Máy chủ xử lý quá lâu, vui lòng thử lại"}}`
 	return func(next http.Handler) http.Handler {
-		return http.TimeoutHandler(next, d, body)
+		th := http.TimeoutHandler(next, d, body)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TimeoutHandler ghi body lỗi thẳng vào w: đặt sẵn Content-Type JSON.
+			// Handler chạy xong bình thường thì header của nó ghi đè giá trị này.
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			th.ServeHTTP(w, r)
+		})
 	}
 }

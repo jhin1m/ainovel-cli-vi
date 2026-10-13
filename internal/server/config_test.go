@@ -51,6 +51,9 @@ func TestLoadConfigFromFiles(t *testing.T) {
 	if len(cfg.Warnings) != 0 {
 		t.Fatalf("không được cảnh báo: %v", cfg.Warnings)
 	}
+	if cfg.ClientIPHeader != "X-Forwarded-For" {
+		t.Fatalf("header IP mặc định sai: %q", cfg.ClientIPHeader)
+	}
 }
 
 func TestLoadConfigErrors(t *testing.T) {
@@ -66,6 +69,9 @@ func TestLoadConfigErrors(t *testing.T) {
 		"trusted proxies sai":           {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_TRUSTED_PROXIES": "abc"},
 		"giới hạn âm":                   {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_MAX_JOBS": "-1"},
 		"public url không phải http(s)": {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_PUBLIC_URL": "ftp://x"},
+		"public url có đường dẫn":       {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_PUBLIC_URL": "https://x.vn/app"},
+		"DB env kèm file ngoài dev":     {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_DATABASE_URL": "postgres://x", "AINOVEL_MASTER_KEY_FILE": mk},
+		"header IP lạ":                  {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_CLIENT_IP_HEADER": "X-Real-IP"},
 	}
 	for name, env := range cases {
 		t.Run(name, func(t *testing.T) {

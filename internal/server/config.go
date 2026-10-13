@@ -30,6 +30,7 @@ type Config struct {
 	DataDir        string
 	PublicURL      string
 	TrustedProxies []netip.Prefix
+	ClientIPHeader string // header chứa IP client do proxy tin cậy đặt
 	Dev            bool
 
 	DatabaseURL string
@@ -54,15 +55,27 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	}
 	if cfg.PublicURL != "" {
 		u, err := url.Parse(cfg.PublicURL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-			return Config{}, fmt.Errorf("AINOVEL_PUBLIC_URL không hợp lệ: cần dạng https://ten-mien")
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+			return Config{}, fmt.Errorf("AINOVEL_PUBLIC_URL không hợp lệ: cần dạng https://ten-mien (không có đường dẫn)")
 		}
 	}
 	if cfg.TrustedProxies, err = parseCIDRs(getenv("AINOVEL_TRUSTED_PROXIES")); err != nil {
 		return Config{}, err
 	}
+	switch h := envOr(getenv, "AINOVEL_CLIENT_IP_HEADER", "X-Forwarded-For"); strings.ToLower(h) {
+	case "x-forwarded-for":
+		cfg.ClientIPHeader = "X-Forwarded-For"
+	case "cf-connecting-ip":
+		cfg.ClientIPHeader = "CF-Connecting-IP"
+	default:
+		return Config{}, fmt.Errorf("AINOVEL_CLIENT_IP_HEADER chỉ nhận X-Forwarded-For hoặc CF-Connecting-IP")
+	}
 
-	// Database URL: file là đường chính; env thẳng chỉ cho phép ở dev.
+	// Database URL: file là đường chính; env thẳng chỉ cho phép ở dev (env của
+	// server đọc được qua /proc bởi cùng UID, kể cả khi đã có file).
+	if v := strings.TrimSpace(getenv("AINOVEL_DATABASE_URL")); v != "" && !cfg.Dev {
+		return Config{}, errors.New("AINOVEL_DATABASE_URL chỉ dùng được khi AINOVEL_DEV=true; ở production hãy dùng AINOVEL_DATABASE_URL_FILE")
+	}
 	if path := strings.TrimSpace(getenv("AINOVEL_DATABASE_URL_FILE")); path != "" {
 		data, warn, err := readSecretFile(path)
 		if err != nil {
@@ -71,9 +84,6 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		cfg.addWarning(warn)
 		cfg.DatabaseURL = strings.TrimSpace(string(data))
 	} else if v := strings.TrimSpace(getenv("AINOVEL_DATABASE_URL")); v != "" {
-		if !cfg.Dev {
-			return Config{}, errors.New("AINOVEL_DATABASE_URL chỉ dùng được khi AINOVEL_DEV=true; ở production hãy dùng AINOVEL_DATABASE_URL_FILE")
-		}
 		cfg.DatabaseURL = v
 	}
 	if cfg.DatabaseURL == "" {

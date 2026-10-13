@@ -35,6 +35,11 @@ func Command(args []string, version string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Tín hiệu thứ hai (Ctrl+C lần nữa) giết process ngay theo hành vi mặc định.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	srv, err := New(ctx, cfg, Options{Version: version})
 	if err != nil {
