@@ -23,11 +23,12 @@ func NewCatalog(reg *models.ModelRegistry) *Catalog {
 	return &Catalog{reg: reg}
 }
 
-// StartRefresh nạp giá (cache trên đĩa 24h) lúc khởi động và làm mới mỗi 24h.
+// StartRefresh nạp giá (cache trên đĩa 24h) lúc khởi động và kiểm lại mỗi 12h
+// (nhịp ngắn hơn TTL để cache không sống tới gần 48h).
 func (c *Catalog) StartRefresh(ctx context.Context, cacheDir string) {
 	models.StartPricingRefresh(c.reg, cacheDir)
 	go func() {
-		t := time.NewTicker(24 * time.Hour)
+		t := time.NewTicker(12 * time.Hour)
 		defer t.Stop()
 		for {
 			select {

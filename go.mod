@@ -13,8 +13,10 @@ require (
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/voocel/agentcore v1.8.3
 	github.com/voocel/litellm v1.8.10
+	golang.org/x/crypto v0.55.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/text v0.41.0
+	golang.org/x/time v0.15.0
 )
 
 require (
@@ -40,9 +42,7 @@ require (
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 )

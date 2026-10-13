@@ -33,6 +33,9 @@ func Command(args []string, version string, stdout, stderr io.Writer) int {
 	for _, w := range cfg.Warnings {
 		slog.Warn(w)
 	}
+	if !cfg.Dev && len(cfg.TrustedProxies) == 0 {
+		slog.Warn("chưa đặt AINOVEL_TRUSTED_PROXIES: sau reverse proxy mọi client sẽ cùng một IP, rate limit đăng nhập dùng chung cho tất cả")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Tín hiệu thứ hai (Ctrl+C lần nữa) giết process ngay theo hành vi mặc định.

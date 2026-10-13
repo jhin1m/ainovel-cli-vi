@@ -162,8 +162,19 @@ func tooMany(wait time.Duration) error { return httpx.TooManyRequests(wait) }
 // writeErr ghi lỗi chuẩn (gồm Retry-After cho 429).
 func writeErr(w http.ResponseWriter, r *http.Request, err error) { httpx.WriteErr(w, r, err) }
 
+// ipKey là khoá rate limit theo IP; IPv6 gom theo /64 vì một máy thường có cả dải.
+func ipKey(r *http.Request) string {
+	ip := httpx.ClientIPFrom(r.Context())
+	if ip.Is6() && !ip.Is4In6() {
+		if p, err := ip.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return ip.String()
+}
+
 func (s *Service) allowIP(r *http.Request) error {
-	if ok, wait := s.ipLimiter.Allow(httpx.ClientIPFrom(r.Context()).String()); !ok {
+	if ok, wait := s.ipLimiter.Allow(ipKey(r)); !ok {
 		return tooMany(wait)
 	}
 	return nil
@@ -280,8 +291,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if len(email) > 254 {
+		writeErr(w, r, errBadLogin)
+		return
+	}
 	// Theo (IP, email): kẻ tấn công ở IP khác không khoá được tài khoản người khác.
-	if ok, wait := s.loginLimiter.Allow(httpx.ClientIPFrom(r.Context()).String() + "|" + email); !ok {
+	if ok, wait := s.loginLimiter.Allow(ipKey(r) + "|" + email); !ok {
 		writeErr(w, r, tooMany(wait))
 		return
 	}
@@ -363,11 +378,16 @@ func (s *Service) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(), `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, u.ID, hash); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if err := s.sessions.DeleteOthers(r.Context(), u.ID, token); err != nil {
+	// Đổi mật khẩu và huỷ các phiên khác trong một transaction: không thể có trạng
+	// thái mật khẩu đã đổi mà phiên của kẻ chiếm tài khoản vẫn sống.
+	err = pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(r.Context(), `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, u.ID, hash); err != nil {
+			return err
+		}
+		_, err := tx.Exec(r.Context(), `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, u.ID, hashToken(token))
+		return err
+	})
+	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
