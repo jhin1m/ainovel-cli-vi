@@ -18,6 +18,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/eval"
 	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
+	"github.com/voocel/ainovel-cli/internal/server"
 	buildversion "github.com/voocel/ainovel-cli/internal/version"
 )
 
@@ -38,6 +39,10 @@ func main() {
 	// worker là process con của `serve`: không đọc config trên đĩa, không chạy setup.
 	if len(os.Args) > 1 && os.Args[1] == "worker" {
 		os.Exit(runWorker())
+	}
+	// serve là bản web: HTTP + SSE + SPA nhúng, cấu hình qua env và file secret.
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		os.Exit(server.Command(os.Args[2:], versionInfo().Version, os.Stdout, os.Stderr))
 	}
 
 	opts, args, err := parseCLIOptions(os.Args[1:])

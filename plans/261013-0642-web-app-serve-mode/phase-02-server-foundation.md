@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Server foundation"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: []
@@ -71,9 +71,9 @@ web/
 
 ## Success Criteria
 
-- [ ] `./ainovel-cli serve` lên với file secret; `/healthz` 200; migration chạy đúng một lần khi hai instance khởi động cùng lúc.
-- [ ] POST cross-origin bị chặn; same-origin JSON qua; trang HTML có CSP.
-- [ ] `go build` chạy được khi `web/dist` chỉ có `.gitkeep`.
+- [x] `./ainovel-cli serve` lên với file secret; `/healthz` 200; migration chạy đúng một lần khi hai instance khởi động cùng lúc.
+- [x] POST cross-origin bị chặn; same-origin JSON qua; trang HTML có CSP.
+- [x] `go build` chạy được khi `web/dist` chỉ có `.gitkeep`.
 
 ## Risk Assessment
 

@@ -50,3 +50,9 @@ ainovel.db
 # File điều phối worker (không commit)
 reports/status-*.txt
 reports/task-*.prompt.md
+
+# Bản web (serve): dist do Vite build, chỉ giữ .gitkeep để go:embed luôn có thư mục
+!web/dist/
+web/dist/*
+!web/dist/.gitkeep
+web/node_modules/
