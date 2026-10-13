@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Supervisor, Books API, SSE"
-status: pending
+status: completed
 priority: P1
 effort: "3.5d"
 dependencies: [1, 3]
@@ -188,13 +188,13 @@ Export:
 
 ## Success Criteria
 
-- [ ] Hai user chạy song song, giới hạn đúng; job vượt giới hạn nằm `queued` rồi tự chạy khi có slot; truyện chờ duyệt không giữ slot.
-- [ ] "Chương tiếp" chạy được: `waiting_review` → `/next` → viết đúng một chương → `waiting_review`.
-- [ ] Hết ngân sách → `budget_exhausted`; nâng ngân sách là chạy tiếp; restart không biến nó thành `failed`.
-- [ ] Restart/deploy → truyện đang chạy và đang xếp hàng đều tiếp tục, steer đang chờ không bị mất.
-- [ ] Env của worker chỉ có 4 biến ở trên; key và secret không có trong env của server lẫn worker.
-- [ ] User B không đọc, điều khiển hay dùng key được gì của A (test).
-- [ ] Export TXT/EPUB đúng nội dung; 10 request export song song không làm RAM server vượt mức (bị 429).
+- [x] Hai user chạy song song, giới hạn đúng; job vượt giới hạn nằm `queued` rồi tự chạy khi có slot; truyện chờ duyệt không giữ slot.
+- [x] "Chương tiếp" chạy được: `waiting_review` → `/next` → viết đúng một chương → `waiting_review`.
+- [x] Hết ngân sách → `budget_exhausted`; nâng ngân sách là chạy tiếp; restart không biến nó thành `failed`.
+- [x] Restart/deploy → truyện đang chạy và đang xếp hàng đều tiếp tục, steer đang chờ không bị mất.
+- [x] Env của worker chỉ có 4 biến ở trên; key và secret không có trong env của server lẫn worker.
+- [x] User B không đọc, điều khiển hay dùng key được gì của A (test).
+- [x] Export TXT/EPUB đúng nội dung; 10 request export song song không làm RAM server vượt mức (bị 429).
 
 ## Risk Assessment
 

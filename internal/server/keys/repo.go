@@ -36,6 +36,7 @@ func (r *Repo) List(ctx context.Context, userID string) ([]api.APIKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	out := []api.APIKey{}
 	for rows.Next() {
 		var k api.APIKey
@@ -109,4 +110,26 @@ func newUUID() (string, error) {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// DecryptForBook là lối duy nhất lấy key rõ: đi qua truyện và FK kép (key phải
+// thuộc đúng chủ truyện), AAD = user_id|api_key_id. Trả về provider của key.
+func (r *Repo) DecryptForBook(ctx context.Context, bookID string) (string, []byte, error) {
+	var provider, userID, keyID string
+	var ct, nonce []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT k.provider, k.ciphertext, k.nonce, b.user_id::text, k.id::text
+		FROM books b JOIN api_keys k ON k.user_id = b.user_id AND k.id = b.api_key_id
+		WHERE b.id::text = $1`, bookID).Scan(&provider, &ct, &nonce, &userID, &keyID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, ErrNotFound
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	key, err := r.box.Open(ct, nonce, secret.KeyAAD(userID, keyID))
+	if err != nil {
+		return "", nil, err
+	}
+	return provider, key, nil
 }

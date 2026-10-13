@@ -38,6 +38,10 @@ type Config struct {
 
 	Limits Limits
 
+	// DevWorkerBin: chỉ ở dev — chạy chương trình này thay cho chính binary làm
+	// worker (worker giả cho e2e, không cần LLM).
+	DevWorkerBin string
+
 	// Warnings là các cảnh báo không chặn khởi động (vd. file secret quyền rộng).
 	Warnings []string
 }
@@ -105,6 +109,12 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 
 	if cfg.Limits, err = loadLimits(getenv); err != nil {
 		return Config{}, err
+	}
+	if v := strings.TrimSpace(getenv("AINOVEL_DEV_WORKER_BIN")); v != "" {
+		if !cfg.Dev {
+			return Config{}, errors.New("AINOVEL_DEV_WORKER_BIN chỉ dùng được khi AINOVEL_DEV=true")
+		}
+		cfg.DevWorkerBin = v
 	}
 	return cfg, nil
 }

@@ -19,8 +19,10 @@ import (
 
 	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/server/auth"
+	"github.com/voocel/ainovel-cli/internal/server/books"
 	"github.com/voocel/ainovel-cli/internal/server/db"
 	"github.com/voocel/ainovel-cli/internal/server/httpx"
+	"github.com/voocel/ainovel-cli/internal/server/jobs"
 	"github.com/voocel/ainovel-cli/internal/server/keys"
 	"github.com/voocel/ainovel-cli/internal/server/secret"
 	"github.com/voocel/ainovel-cli/web"
@@ -46,6 +48,8 @@ type Server struct {
 	auth    *auth.Service
 	keyRepo *keys.Repo
 	catalog *keys.Catalog
+	sup     *jobs.Supervisor
+	books   *books.Service
 
 	// bgCtx sống suốt đời server; huỷ khi tắt để dừng các việc nền.
 	bgCtx    context.Context
@@ -119,7 +123,27 @@ func newServer(cfg Config, pool *pgxpool.Pool, opts Options) (*Server, error) {
 		catalog: catalog,
 	}
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
-	s.afterHTTP = append(s.afterHTTP, func(context.Context) { s.bgCancel() })
+	jobCfg := jobs.Config{
+		DataDir: cfg.DataDir, Version: opts.Version, Language: "vi",
+		MaxJobs: cfg.Limits.MaxJobs, MaxJobsPerUser: cfg.Limits.MaxJobsPerUser,
+	}
+	if cfg.Dev && cfg.DevWorkerBin != "" {
+		jobCfg.WorkerBin = cfg.DevWorkerBin
+		jobCfg.WorkerArgs = []string{"--version", opts.Version}
+	}
+	s.sup = jobs.New(jobCfg, pool, s.keyRepo, catalog, jobs.NewHubs())
+	s.books = books.NewService(books.Deps{
+		Repo: books.NewRepo(pool), Keys: s.keyRepo, Catalog: catalog, Auth: s.auth, Sup: s.sup,
+		Exporter: books.NewExporter(cfg.Limits.MaxExports), DataDir: cfg.DataDir, Closing: s.closing,
+		Limits: books.Limits{
+			MaxBooksPerUser: cfg.Limits.MaxBooksPerUser, MaxBookBudgetUSD: cfg.Limits.MaxBookBudgetUSD,
+			MaxSSEPerUser: cfg.Limits.MaxSSEPerUser, MaxSSETotal: cfg.Limits.MaxSSETotal,
+		},
+	})
+	// Tắt hai bước: đánh dấu truyện đang chạy là interrupted trước khi dừng HTTP,
+	// dừng worker sau khi HTTP đã dừng, rồi mới huỷ việc nền và đóng pool.
+	s.beforeShutdown = append(s.beforeShutdown, s.sup.BeforeShutdown)
+	s.afterHTTP = append(s.afterHTTP, s.sup.Shutdown, func(context.Context) { s.bgCancel() })
 	if err := s.routes(); err != nil {
 		return nil, err
 	}
@@ -136,7 +160,8 @@ func (s *Server) routes() error {
 	// riêng và ném lại panic, stack trace bắt ở lớp ngoài là của TimeoutHandler.
 	s.root.Handle("/api/", httpx.Chain(s.api, crossOrigin, httpx.RequireJSON, httpx.MaxBytes(maxBodyBytes), httpx.Timeout(requestTimeout), httpx.Recover))
 	s.auth.Register(s.api)
-	keys.NewHandlers(s.keyRepo, s.catalog, s.auth, nil).Register(s.api)
+	keys.NewHandlers(s.keyRepo, s.catalog, s.auth, s.books.KeyInUse).Register(s.api)
+	s.books.Register(s.api, s.root)
 	s.api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Không tìm thấy API này")
 	})
@@ -177,7 +202,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
-	s.startBackground()
+	if err := s.startBackground(); err != nil {
+		s.shutdownRest(context.Background())
+		return err
+	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
 	slog.Info("server đang lắng nghe", "addr", ln.Addr().String(), "version", s.version)
@@ -223,8 +251,12 @@ func (s *Server) shutdownRest(ctx context.Context) {
 
 // startBackground chạy các việc nền: nạp/làm mới bảng giá model, dọn session hết
 // hạn và rate limiter.
-func (s *Server) startBackground() {
+func (s *Server) startBackground() error {
 	s.catalog.StartRefresh(s.bgCtx, filepath.Join(s.cfg.DataDir, "cache"))
+	if err := s.sup.Start(s.bgCtx); err != nil {
+		return err
+	}
+	s.books.ResumeDeletes(s.bgCtx)
 	go func() {
 		t := time.NewTicker(time.Hour)
 		defer t.Stop()
@@ -240,6 +272,7 @@ func (s *Server) startBackground() {
 			}
 		}
 	}()
+	return nil
 }
 
 // lowDiskBytes: dưới mức này /healthz báo disk_low để cảnh báo trước khi đầy.
