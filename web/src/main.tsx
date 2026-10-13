@@ -8,6 +8,8 @@ import '@fontsource/be-vietnam-pro/600.css'
 import '@fontsource/be-vietnam-pro/700.css'
 import './styles/app.css'
 import { ApiError, setUnauthorizedHandler } from './api/client'
+import { UpdateToast } from './components/update-toast'
+import { registerServiceWorker } from './lib/pwa-update'
 import { makeRouter } from './router'
 
 const queryClient = new QueryClient({
@@ -32,6 +34,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      <UpdateToast />
     </QueryClientProvider>
   </StrictMode>,
 )
+
+void registerServiceWorker()

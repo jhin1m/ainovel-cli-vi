@@ -305,6 +305,12 @@ không bị coi là chương đã viết. Muốn nhập truyện có sẵn để
 Mỗi bộ truyện gắn với thư mục khởi động, dữ liệu nằm ở `./output/novel/`. Đổi thư mục = bộ mới; `cd` về thư mục cũ rồi chạy =
 tự khôi phục từ checkpoint gần nhất. Config `~/.ainovel/config.json` dùng chung, không cần sao chép.
 
+## Bản web
+
+Ngoài TUI và headless, `ainovel-cli serve` chạy engine như dịch vụ web nhiều người dùng (đăng nhập bằng mã mời, mỗi người
+dùng API key của mình, xem tiến độ realtime, đọc và xuất truyện, cài được như PWA). Build một binary có nhúng giao diện bằng
+`make build` (cần Go, Node 24 và pnpm). Cài đặt trên VPS, biến môi trường, backup và nâng cấp: [docs/web-server.md](docs/web-server.md).
+
 ## Cấu hình
 
 Lần chạy đầu tự sinh `~/.ainovel/config.json`. Trong TUI, `/config` để thêm/sửa Provider, lưu nhiều model và đặt cửa sổ ngữ cảnh

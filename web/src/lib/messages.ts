@@ -12,6 +12,12 @@ export const msg = {
   rateLimited: 'Thao tác quá nhanh, thử lại sau',
   notFound: 'Không tìm thấy nội dung này',
 
+  update: {
+    available: 'Có phiên bản mới',
+    reload: 'Cập nhật',
+    later: 'Để sau',
+  },
+
   nav: {
     library: 'Thư viện',
     newBook: 'Truyện mới',

@@ -63,3 +63,35 @@ git push origin vi
 - `go test ./assets` kiểm tra bản vi đủ file, giữ đủ placeholder và tên tool so với bản gốc.
 - Chạy thử headless một truyện ngắn (xem README.md) và xem chương ra có chữ Hán hoặc
   lặp đoạn không.
+
+## Phần bản web (`serve`) của fork
+
+Bản web nằm trong thư mục riêng của fork, upstream không có nên không xung đột:
+`internal/server/`, `internal/entry/worker/`, `web/`, `deploy/`, `docs/web-server.md`, `Makefile`, `tygo.yaml`,
+`.github/workflows/web.yml`. Không sửa `.github/workflows/ci.yml`, `.goreleaser.yml`, `Dockerfile`; bản release CLI giữ nguyên.
+
+File upstream mà nhánh này có sửa (cần để ý khi merge `upstream/main`; liệt kê bằng
+`git diff --name-only --diff-filter=M vi...feat/web-app`):
+
+| File | Thay đổi của fork |
+|---|---|
+| `cmd/ainovel-cli/main.go` | Thêm hai lệnh con `worker` và `serve` (cùng import `os/signal`, `syscall`, `internal/entry/worker`, `internal/server`) và hàm `runWorker`. |
+| `.gitignore` | Thêm quy tắc cho `web/dist/*` (giữ `.gitkeep`) và `web/node_modules/`. |
+| `go.mod`, `go.sum` | Thêm dependency của server: pgx v5, goose v3, golang.org/x/crypto, golang.org/x/time. |
+| `README.md` | Thêm mục "Bản web" (trước mục "Cấu hình"). |
+
+Cách giải conflict:
+
+- `cmd/ainovel-cli/main.go`: giữ phần mới của upstream, chép lại hai khối `if len(os.Args) > 1 && os.Args[1] == "worker"` / `"serve"`
+  ở đầu `main()` và hàm `runWorker` cuối file.
+- `go.mod` / `go.sum`: lấy bản của upstream rồi để Go tính lại, đừng sửa tay:
+  ```bash
+  git checkout --theirs go.mod go.sum
+  go mod tidy
+  ```
+  Nếu `go mod tidy` bỏ mất dependency của server thì `go build ./...` sẽ báo thiếu; chạy lại `go mod tidy` sau khi
+  chắc chắn mã `internal/server` còn trong cây.
+- `.gitignore`: giữ cả hai bên (thêm khối "Bản web" vào cuối file).
+- `README.md`: xem hướng dẫn README ở trên, rồi thêm lại mục "Bản web".
+- Sau merge chạy thêm: `go test ./internal/server/... ./internal/entry/worker/...` (cần `AINOVEL_TEST_DATABASE_URL` để chạy test DB)
+  và `make gen && git diff --exit-code` nếu upstream đổi kiểu mà `internal/server/api` dùng.

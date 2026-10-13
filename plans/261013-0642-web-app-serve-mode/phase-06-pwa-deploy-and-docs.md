@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "PWA, deploy, docs"
-status: pending
+status: completed
 priority: P2
 effort: "1.5d"
 dependencies: [5]
@@ -93,11 +93,13 @@ Không sửa `.goreleaser.yml`, `Dockerfile`, `.github/workflows/ci.yml` (file c
 
 ## Success Criteria
 
-- [ ] `make build` ra một binary; `serve` chạy được mà không cần thư mục `web/` đi kèm.
+- [x] `make build` ra một binary; `serve` chạy được mà không cần thư mục `web/` đi kèm.
 - [ ] Cài được PWA; khi có bản mới thì service worker tự lấy bản mới; SSE vẫn chạy khi service worker đang active.
 - [ ] CI `web.yml` xanh; `ci.yml` của upstream không đổi.
 - [ ] `systemctl restart` trên staging không làm truyện nào thành `failed`.
-- [ ] `docs/web-server.md` đủ để người khác tự dựng server.
+- [x] `docs/web-server.md` đủ để người khác tự dựng server.
+
+> Còn làm tay: cài PWA trên Android/iOS + Lighthouse installable, SSE khi service worker active, CI web.yml chạy khi push (ci.yml không đổi), restart trên staging VPS. Đã kiểm cục bộ: binary chạy serve không cần thư mục web/, trả index/manifest/sw.js/healthz đúng.
 
 ## Risk Assessment
 

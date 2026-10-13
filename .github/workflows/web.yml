@@ -1,0 +1,108 @@
+name: Web
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "internal/server/**"
+      - "internal/entry/worker/**"
+      - "tygo.yaml"
+      - "Makefile"
+      - ".github/workflows/web.yml"
+  push:
+    branches:
+      - vi
+    paths:
+      - "web/**"
+      - "internal/server/**"
+      - "internal/entry/worker/**"
+      - "tygo.yaml"
+      - "Makefile"
+      - ".github/workflows/web.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: Generated types are up to date
+        run: |
+          make gen
+          git diff --exit-code -- web/src/api/types.gen.ts
+
+      - name: Typecheck
+        run: pnpm -C web typecheck
+
+      - name: Lint
+        run: pnpm -C web lint
+
+      - name: Test
+        run: pnpm -C web test
+
+      - name: Build
+        run: pnpm -C web build
+
+      - name: Go build with the built SPA embedded
+        run: go build -o ainovel-cli ./cmd/ainovel-cli
+
+      - name: Built SPA exists for embedding
+        run: test -s web/dist/index.html
+
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      AINOVEL_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format check
+        run: test -z "$(gofmt -l internal/server internal/entry/worker cmd)"
+
+      - name: Vet
+        run: go vet ./internal/server/... ./internal/entry/worker/... ./cmd/...
+
+      - name: Test with race detector
+        run: go test -race ./internal/server/... ./internal/entry/worker/...

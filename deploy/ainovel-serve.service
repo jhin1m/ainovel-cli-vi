@@ -1,0 +1,75 @@
+# Cài tại /etc/systemd/system/ainovel-serve.service
+# Cần systemd >= 250 (Debian 12, Ubuntu 24.04 trở lên): %d là thư mục credential.
+[Unit]
+Description=AI Novel (ainovel-cli serve)
+Documentation=https://github.com/jhin1m/ainovel-cli-vi/blob/vi/docs/web-server.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ainovel
+Group=ainovel
+ExecStart=/usr/local/bin/ainovel-cli serve
+
+# Secret đi qua credential của systemd: file nguồn chỉ root đọc được, service chỉ
+# thấy bản sao trong thư mục riêng (%d) và không có secret nào nằm trong env.
+LoadCredential=database-url:/etc/ainovel/database-url
+LoadCredential=master-key:/etc/ainovel/master-key
+Environment=AINOVEL_DATABASE_URL_FILE=%d/database-url
+Environment=AINOVEL_MASTER_KEY_FILE=%d/master-key
+
+# Cấu hình không bí mật. Đổi PUBLIC_URL thành tên miền thật.
+Environment=AINOVEL_LISTEN=127.0.0.1:8080
+Environment=AINOVEL_DATA_DIR=/var/lib/ainovel
+Environment=AINOVEL_PUBLIC_URL=https://novel.example.com
+Environment=AINOVEL_TRUSTED_PROXIES=127.0.0.1/32
+Environment=AINOVEL_CLIENT_IP_HEADER=X-Forwarded-For
+# Giới hạn tài nguyên tuỳ chọn (xem docs/web-server.md):
+#Environment=AINOVEL_MAX_JOBS=4
+#Environment=AINOVEL_MAX_JOBS_PER_USER=1
+
+# SIGTERM chỉ gửi cho server; server tự dừng các worker (shutdown -> SIGTERM -> SIGKILL)
+# và đánh dấu truyện đang chạy để tự tiếp tục ở lần khởi động sau. Sau TimeoutStopSec
+# systemd mới SIGKILL phần còn lại. Server cần tối đa ~60s để drain.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=3
+
+# Worker là process con (fork/exec chính binary này): không chặn fork/exec,
+# chỉ giới hạn tổng số task và bộ nhớ. Worker tự đặt oom_score_adj=500
+# nên khi thiếu RAM kernel giết worker trước server.
+MemoryMax=3G
+TasksMax=512
+LimitCORE=0
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ainovel
+StateDirectory=ainovel
+StateDirectoryMode=0700
+UMask=0077
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

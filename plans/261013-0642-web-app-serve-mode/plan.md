@@ -62,7 +62,7 @@ ainovel-cli serve ── Postgres (users, sessions, invites, api_keys, books)
 | 3 | [Auth và BYOK keys](./phase-03-auth-and-byok-keys.md) | 2 | 1d | Completed |
 | 4 | [Supervisor, Books API, SSE](./phase-04-job-supervisor-and-books-api.md) | 1, 3 | 3.5d | Completed |
 | 5 | [Web SPA](./phase-05-web-spa.md) | 4 | 4d | Completed |
-| 6 | [PWA, deploy, docs](./phase-06-pwa-deploy-and-docs.md) | 5 | 1.5d | Pending |
+| 6 | [PWA, deploy, docs](./phase-06-pwa-deploy-and-docs.md) | 5 | 1.5d | Completed |
 
 ## Ngoài phạm vi MVP
 
