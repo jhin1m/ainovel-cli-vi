@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import type { Book } from '@/api/types.gen'
-import { StatusBadge } from '@/components/status-badge'
+import { StatusBadge, statusLabel } from '@/components/status-badge'
 import { formatDate, formatNumber, formatUSD, formatUSDPlain } from '@/lib/format'
 import { msg } from '@/lib/messages'
 
@@ -59,7 +59,11 @@ export function BookCard({ book }: { book: Book }) {
     <Link
       to="/books/$id"
       params={{ id: book.id }}
-      aria-label={msg.library.open(title)}
+      aria-label={msg.library.open(
+        title,
+        statusLabel(book.status),
+        msg.library.chapterProgress(s?.completed_count ?? 0, s?.total_chapters ?? 0),
+      )}
       className="flex flex-col gap-2.5 rounded-[14px] border border-line bg-surface p-4 text-fg no-underline hover:text-fg"
     >
       <div className="flex items-start justify-between gap-3">

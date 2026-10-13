@@ -5,5 +5,5 @@ export const Route = createFileRoute('/_app/books/$id/read/$n')({ component: Rea
 
 function ReadPage() {
   const { id, n } = Route.useParams()
-  return <ReaderPage key={id} bookId={id} n={Number.parseInt(n, 10)} />
+  return <ReaderPage key={id} bookId={id} n={/^[1-9]\d{0,8}$/.test(n) ? Number(n) : Number.NaN} />
 }

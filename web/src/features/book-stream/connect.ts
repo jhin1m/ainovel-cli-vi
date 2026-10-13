@@ -1,6 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { qk } from '@/api/queries'
+import { ApiError } from '@/api/client'
+import { bookQuery, qk } from '@/api/queries'
 import type { Book, BookSnapshot, Event, StatusChange, StreamDelta } from '@/api/types.gen'
+import { msg } from '@/lib/messages'
 import type { BookStreamStore } from './stream-store'
 
 type EventSourceCtor = new (url: string, init?: EventSourceInit) => EventSource
@@ -63,8 +65,32 @@ export function connectBookStream(
     }))
     if (prev && prev.status !== ch.status) {
       void qc.invalidateQueries({ queryKey: qk.books })
+      void qc.invalidateQueries({ queryKey: bookKey, exact: true })
       if (SETTLED.has(ch.status)) void qc.invalidateQueries({ queryKey: qk.chapters(id) })
     }
+  }
+
+  const scheduleRetry = () => {
+    timer = setTimeout(open, delay)
+    delay = Math.min(delay * 2, RETRY_MAX_MS)
+  }
+
+  // Trình duyệt chỉ báo CLOSED khi server từ chối (401/404/...) nên hỏi lại truyện để biết lý do thật.
+  const recover = async () => {
+    try {
+      await qc.fetchQuery({ ...bookQuery(id), staleTime: 0 })
+    } catch (e) {
+      if (stopped) return
+      const status = e instanceof ApiError ? e.status : 0
+      const transient = status === 0 || status === 429 || status >= 500
+      if (!transient) {
+        // 401 đã được client API đưa về luồng đăng nhập; 404 nghĩa là truyện không còn.
+        if (status === 404) void qc.invalidateQueries({ queryKey: qk.books })
+        store.setFailure(e instanceof ApiError ? e.message : msg.genericError)
+        return
+      }
+    }
+    if (!stopped) scheduleRetry()
   }
 
   const open = () => {
@@ -79,8 +105,7 @@ export function connectBookStream(
       store.setReconnecting(true)
       if (source.readyState === 2 /* CLOSED */ && !stopped) {
         source.close()
-        timer = setTimeout(open, delay)
-        delay = Math.min(delay * 2, RETRY_MAX_MS)
+        void recover()
       }
     }
     source.addEventListener('snapshot', (m) => onSnapshot(parse((m as MessageEvent).data)))

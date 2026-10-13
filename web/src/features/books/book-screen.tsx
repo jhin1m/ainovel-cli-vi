@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Download, Pause, Play } from 'lucide-react'
-import { useState } from 'react'
-import { errorMessage } from '@/api/client'
+import { useRef, useState, type KeyboardEvent } from 'react'
+import { download, errorMessage } from '@/api/client'
 import { useBook, useNextChapter, usePatchBook, usePauseBook, useResumeBook } from '@/api/queries'
 import type { Book } from '@/api/types.gen'
 import { StatusBadge } from '@/components/status-badge'
@@ -10,7 +10,13 @@ import { FormError } from '@/components/ui/field'
 import { ErrorState, LoadingState } from '@/components/ui/states'
 import { StreamText } from '@/features/book-stream/stream-text'
 import { Timeline } from '@/features/book-stream/timeline'
-import { useBookStream } from '@/features/book-stream/use-book-stream'
+import {
+  selectEvents,
+  selectStreamText,
+  useBookStreamStore,
+  useStreamSelector,
+} from '@/features/book-stream/use-book-stream'
+import type { BookStreamStore } from '@/features/book-stream/stream-store'
 import { formatNumber, formatUSD, formatUSDPlain } from '@/lib/format'
 import { msg } from '@/lib/messages'
 import { bookTitle } from './book-card'
@@ -33,7 +39,24 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
+type ExportFormat = 'epub' | 'txt'
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 function ExportMenu({ bookId, disabled }: { bookId: string; disabled: boolean }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const menuRef = useRef<HTMLDetailsElement>(null)
+
   if (disabled) {
     return (
       <span aria-disabled="true" title={msg.book.exportEmpty} className={buttonClass('secondary', 'opacity-60')}>
@@ -42,23 +65,43 @@ function ExportMenu({ bookId, disabled }: { bookId: string; disabled: boolean })
       </span>
     )
   }
-  const base = `/api/books/${encodeURIComponent(bookId)}/export`
-  const item = 'flex min-h-[44px] items-center px-4 text-[15px] text-fg no-underline hover:bg-track hover:text-fg'
+
+  const run = async (format: ExportFormat) => {
+    menuRef.current?.removeAttribute('open')
+    setBusy(true)
+    setError('')
+    try {
+      const { blob, filename } = await download(
+        `/api/books/${encodeURIComponent(bookId)}/export?format=${format}`,
+      )
+      saveBlob(blob, filename || `truyen.${format}`)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const item =
+    'flex min-h-[44px] w-full cursor-pointer items-center border-0 bg-transparent px-4 text-left text-[15px] text-fg hover:bg-track disabled:opacity-60'
   return (
-    <details className="relative">
-      <summary className={`${buttonClass('secondary')} list-none`}>
-        <Download aria-hidden size={16} />
-        {msg.book.export}
-      </summary>
-      <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-control border border-line bg-surface shadow-lg">
-        <a className={item} href={`${base}?format=epub`} download>
-          {msg.book.exportEpub}
-        </a>
-        <a className={item} href={`${base}?format=txt`} download>
-          {msg.book.exportTxt}
-        </a>
-      </div>
-    </details>
+    <div className="flex flex-col gap-2">
+      <details ref={menuRef} className="relative">
+        <summary className={`${buttonClass('secondary')} list-none`} aria-busy={busy}>
+          <Download aria-hidden size={16} />
+          {busy ? msg.book.exporting : msg.book.export}
+        </summary>
+        <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-control border border-line bg-surface shadow-lg">
+          <button type="button" className={item} disabled={busy} onClick={() => void run('epub')}>
+            {msg.book.exportEpub}
+          </button>
+          <button type="button" className={item} disabled={busy} onClick={() => void run('txt')}>
+            {msg.book.exportTxt}
+          </button>
+        </div>
+      </details>
+      {error && <FormError>{error}</FormError>}
+    </div>
   )
 }
 
@@ -78,18 +121,100 @@ function ReviewSwitch({ book }: { book: Book }) {
         aria-labelledby="review-label"
         disabled={patch.isPending}
         onClick={() => patch.mutate({ advance_mode: on ? 'auto' : 'review' })}
-        className={`flex h-8 w-[52px] shrink-0 cursor-pointer items-center rounded-2xl border-0 p-[3px] ${
-          on ? 'justify-end bg-accent' : 'justify-start bg-switch-off'
-        }`}
+        className="flex min-h-[44px] min-w-[52px] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
       >
-        <span className="size-[26px] rounded-full bg-white shadow-sm" />
+        <span
+          className={`flex h-8 w-[52px] items-center rounded-2xl p-[3px] ${
+            on ? 'justify-end bg-accent' : 'justify-start bg-switch-off'
+          }`}
+        >
+          <span className="size-[26px] rounded-full bg-white shadow-sm" />
+        </span>
       </button>
     </div>
   )
 }
 
+function DraftSection({ store }: { store: BookStreamStore }) {
+  const text = useStreamSelector(store, selectStreamText)
+  return (
+    <section className="rounded-card border border-line bg-surface p-4">
+      <h2 className="m-0 mb-2 text-sm font-semibold text-muted">{msg.book.writing.draft}</h2>
+      <StreamText text={text} />
+    </section>
+  )
+}
+
+function ActivitySection({ store }: { store: BookStreamStore }) {
+  const events = useStreamSelector(store, selectEvents)
+  return (
+    <section className="rounded-card border border-line bg-surface p-3">
+      <h2 className="m-0 mb-1 px-1 text-sm font-semibold text-muted">{msg.book.writing.activity}</h2>
+      <Timeline events={events} />
+    </section>
+  )
+}
+
+const tabId = (t: Tab) => `book-tab-${t}`
+const panelId = (t: Tab) => `book-panel-${t}`
+
+function Tabs({
+  tabs,
+  tab,
+  onChange,
+}: {
+  tabs: { id: Tab; label: string }[]
+  tab: Tab
+  onChange: (t: Tab) => void
+}) {
+  const refs = useRef(new Map<Tab, HTMLButtonElement>())
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const i = tabs.findIndex((t) => t.id === tab)
+    let next: number
+    if (e.key === 'ArrowRight') next = (i + 1) % tabs.length
+    else if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = tabs.length - 1
+    else return
+    e.preventDefault()
+    const target = tabs[next]
+    if (!target) return
+    onChange(target.id)
+    refs.current.get(target.id)?.focus()
+  }
+
+  return (
+    <div role="tablist" aria-label={msg.book.tabs.label} onKeyDown={onKeyDown} className="flex gap-1 rounded-control bg-track p-1">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          ref={(el) => {
+            if (el) refs.current.set(t.id, el)
+            else refs.current.delete(t.id)
+          }}
+          id={tabId(t.id)}
+          type="button"
+          role="tab"
+          aria-selected={tab === t.id}
+          aria-controls={panelId(t.id)}
+          tabIndex={tab === t.id ? 0 : -1}
+          onClick={() => onChange(t.id)}
+          className={`min-h-[44px] flex-1 cursor-pointer rounded-[9px] border-0 text-sm ${
+            tab === t.id ? 'bg-surface font-semibold text-fg shadow-sm' : 'bg-transparent font-medium text-muted'
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function Loaded({ book }: { book: Book }) {
-  const stream = useBookStream(book.id)
+  const store = useBookStreamStore(book.id)
+  const reconnecting = useStreamSelector(store, (st) => st.reconnecting)
+  const failure = useStreamSelector(store, (st) => st.failure)
   const pause = usePauseBook(book.id)
   const resume = useResumeBook(book.id)
   const next = useNextChapter(book.id)
@@ -108,10 +233,16 @@ function Loaded({ book }: { book: Book }) {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      {stream.reconnecting && (
+      {failure ? (
+        <div role="alert" className="bg-st-error-bg px-4 py-2 text-center text-sm font-medium text-st-error">
+          {msg.book.streamStopped}: {failure}
+        </div>
+      ) : (
+        reconnecting && (
         <div role="status" className="bg-st-budget-bg px-4 py-2 text-center text-sm font-medium text-st-budget">
           {msg.book.reconnecting}
         </div>
+        )
       )}
       <div className="grid flex-1 grid-cols-1 content-start gap-4 px-4 pb-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-6">
         <header className="pt-safe flex items-start gap-2 lg:col-start-1">
@@ -175,42 +306,21 @@ function Loaded({ book }: { book: Book }) {
         </aside>
 
         <div className="flex min-w-0 flex-col gap-3 lg:col-start-1">
-          <div role="tablist" aria-label={msg.book.tabs.label} className="flex gap-1 rounded-control bg-track p-1">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={`min-h-[44px] flex-1 cursor-pointer rounded-[9px] border-0 text-sm ${
-                  tab === t.id ? 'bg-surface font-semibold text-fg shadow-sm' : 'bg-transparent font-medium text-muted'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs tabs={tabs} tab={tab} onChange={setTab} />
 
           {tab === 'writing' && (
-            <div role="tabpanel" className="flex flex-col gap-4">
-              <section className="rounded-card border border-line bg-surface p-4">
-                <h2 className="m-0 mb-2 text-sm font-semibold text-muted">{msg.book.writing.draft}</h2>
-                <StreamText text={stream.streamText} />
-              </section>
-              <section className="rounded-card border border-line bg-surface p-3">
-                <h2 className="m-0 mb-1 px-1 text-sm font-semibold text-muted">{msg.book.writing.activity}</h2>
-                <Timeline events={stream.events} />
-              </section>
+            <div role="tabpanel" id={panelId('writing')} aria-labelledby={tabId('writing')} className="flex flex-col gap-4">
+              <DraftSection store={store} />
+              <ActivitySection store={store} />
             </div>
           )}
           {tab === 'chapters' && (
-            <div role="tabpanel">
+            <div role="tabpanel" id={panelId('chapters')} aria-labelledby={tabId('chapters')}>
               <ChaptersTab bookId={book.id} />
             </div>
           )}
           {tab === 'outline' && (
-            <div role="tabpanel">
+            <div role="tabpanel" id={panelId('outline')} aria-labelledby={tabId('outline')}>
               <OutlineTab bookId={book.id} active />
             </div>
           )}

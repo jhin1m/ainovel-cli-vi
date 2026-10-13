@@ -90,6 +90,31 @@ export async function request<T>(
   }
 }
 
+/** Tải tệp nhị phân; lỗi (429/409/...) trả ApiError thay vì bị lưu thành tệp. */
+export async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  let res: Response
+  try {
+    res = await fetch(path, { credentials: 'same-origin' })
+  } catch {
+    throw new ApiError(0, 'network', msg.networkError)
+  }
+  if (!res.ok) {
+    const err = await parseError(res)
+    if (res.status === 401) onUnauthorized()
+    throw err
+  }
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)
+  let filename: string
+  try {
+    filename = star?.[1] ? decodeURIComponent(star[1]) : (plain?.[1] ?? '')
+  } catch {
+    filename = plain?.[1] ?? ''
+  }
+  return { blob: await res.blob(), filename }
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => request<T>('GET', path, undefined, opts),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),

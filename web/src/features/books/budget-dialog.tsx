@@ -7,14 +7,8 @@ import { Dialog } from '@/components/ui/dialog'
 import { Field, FormError } from '@/components/ui/field'
 import { formatUSD } from '@/lib/format'
 import { msg } from '@/lib/messages'
+import { MAX_BUDGET_USD, parseRaisedBudget } from './new-book-logic'
 
-const MAX_BUDGET_USD = 50
-
-export function parseBudget(raw: string, spent: number): number | null {
-  const v = Number(raw.replace(',', '.'))
-  if (!Number.isFinite(v) || v <= spent || v > MAX_BUDGET_USD) return null
-  return v
-}
 
 function Form({ book, onClose }: { book: Book; onClose: () => void }) {
   const spent = book.snapshot?.total_cost_usd ?? 0
@@ -24,7 +18,7 @@ function Form({ book, onClose }: { book: Book; onClose: () => void }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const v = parseBudget(value, spent)
+    const v = parseRaisedBudget(value, spent)
     setInvalid(v === null)
     if (v === null) return
     patch.mutate({ budget_usd: v }, { onSuccess: onClose })
@@ -40,7 +34,7 @@ function Form({ book, onClose }: { book: Book; onClose: () => void }) {
         inputMode="decimal"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        error={invalid ? msg.book.budget.invalid : undefined}
+        error={invalid ? msg.book.budget.invalid(MAX_BUDGET_USD) : undefined}
       />
       {patch.isError && <FormError>{errorMessage(patch.error)}</FormError>}
       <div className="flex justify-end gap-2">

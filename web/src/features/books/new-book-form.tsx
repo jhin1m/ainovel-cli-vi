@@ -14,6 +14,7 @@ import {
   MAX_PROMPT_RUNES,
   clampPrompt,
   modelsForKey,
+  MAX_BUDGET_USD,
   parseBudget,
   runeLength,
   validateNewBook,
@@ -193,7 +194,7 @@ export function NewBookForm({ onCreated }: { onCreated: (b: Book) => void }) {
             type="number"
             inputMode="decimal"
             min={1}
-            max={50}
+            max={MAX_BUDGET_USD}
             step="any"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}

@@ -57,6 +57,7 @@ export function Timeline({ events }: { events: readonly Event[] }) {
     setAtBottom(true)
   }, [events.length, virt])
 
+  // `events` giữ nguyên tham chiếu khi không đổi nên chỉ cuộn khi danh sách thật sự thay đổi.
   useEffect(() => {
     if (stick.current && events.length > 0) virt.scrollToIndex(events.length - 1, { align: 'end' })
   }, [events, virt])

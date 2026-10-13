@@ -94,6 +94,7 @@ export function ReaderPage({ bookId, n }: { bookId: string; n: number }) {
 
   const nav = 'inline-flex min-h-[44px] items-center gap-1 rounded-[10px] border-2 border-current/25 px-4 text-[15px] font-medium no-underline'
   const c = chapter.data
+  const validN = Number.isInteger(n) && n > 0
 
   return (
     <div className="flex min-h-dvh flex-col" style={{ background: p.bg, color: p.fg }}>
@@ -108,7 +109,7 @@ export function ReaderPage({ bookId, n }: { bookId: string; n: number }) {
           >
             <ArrowLeft aria-hidden size={22} />
           </Link>
-          <span className="min-w-0 flex-1 truncate text-sm opacity-70">{msg.reader.chapterLabel(n)}</span>
+          <span className="min-w-0 flex-1 truncate text-sm opacity-70">{validN ? msg.reader.chapterLabel(n) : ''}</span>
           <button
             type="button"
             aria-label={msg.reader.settings}
@@ -128,7 +129,11 @@ export function ReaderPage({ bookId, n }: { bookId: string; n: number }) {
       </header>
 
       <main className="flex-1 px-5 pb-8">
-        {chapter.isPending ? (
+        {!validN ? (
+          <div className="mx-auto max-w-[65ch] py-6">
+            <ErrorState title={msg.reader.loadError} detail={msg.notFound} />
+          </div>
+        ) : chapter.isPending ? (
           <LoadingState />
         ) : chapter.isError || !c ? (
           <div className="mx-auto max-w-[65ch] py-6">
@@ -150,7 +155,7 @@ export function ReaderPage({ bookId, n }: { bookId: string; n: number }) {
       </main>
 
       <footer className="pb-safe px-5 pt-2">
-        <nav aria-label={msg.reader.chapterLabel(n)} className="mx-auto flex w-full max-w-[65ch] items-center justify-between gap-3">
+        <nav aria-label={validN ? msg.reader.chapterLabel(n) : msg.reader.back} className="mx-auto flex w-full max-w-[65ch] items-center justify-between gap-3">
           {c && c.prev > 0 ? (
             <Link to="/books/$id/read/$n" params={{ id: bookId, n: String(c.prev) }} className={nav} style={{ color: p.fg }}>
               <ChevronLeft aria-hidden size={18} />

@@ -167,17 +167,6 @@ export function usePatchBook(id: string) {
   })
 }
 
-export function useDeleteBook() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => api.del<void>(bookPath(id)),
-    onSuccess: (_d, id) => {
-      qc.removeQueries({ queryKey: qk.book(id) })
-      void qc.invalidateQueries({ queryKey: qk.books })
-    },
-  })
-}
-
 export type BookCommand = 'pause' | 'resume' | 'next'
 
 /** pause / resume / next: server trả CommandResult kèm Book mới. */

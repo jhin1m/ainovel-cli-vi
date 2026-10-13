@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setUnauthorizedHandler } from '@/api/client'
 import { qk } from '@/api/queries'
 import type { Book, BookSnapshot, Event } from '@/api/types.gen'
 import { connectBookStream } from './connect'
@@ -45,6 +46,17 @@ describe('stream store', () => {
     expect(st.getSnapshot().streamText).toBe('Xin chào')
     st.applyStream({ clear: true })
     expect(st.getSnapshot().streamText).toBe('')
+  })
+
+  it('keeps the events reference when only stream text changes', () => {
+    const st = createBookStreamStore(sync)
+    st.upsertEvent(ev('a'))
+    const before = st.getSnapshot().events
+    st.applyStream({ delta: 'x' })
+    st.setReconnecting(true)
+    expect(st.getSnapshot().events).toBe(before)
+    st.upsertEvent(ev('b'))
+    expect(st.getSnapshot().events).not.toBe(before)
   })
 
   it('batches notifications per scheduled flush', () => {
@@ -153,15 +165,80 @@ describe('connectBookStream', () => {
     expect(store.getSnapshot().events).toHaveLength(1)
   })
 
-  it('reopens manually when the browser gives up', () => {
-    vi.useFakeTimers()
-    const { es, stop } = setup()
+  it('status change refreshes the exact book query', () => {
+    const { qc, es } = setup()
+    const inv = vi.spyOn(qc, 'invalidateQueries')
+    es.emit('status', { status: 'paused', stop_reason: '', last_error: '' })
+    expect(inv).toHaveBeenCalledWith({ queryKey: qk.book('b1'), exact: true })
+  })
+})
+
+describe('connectBookStream recovery after the browser gives up', () => {
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+  const closeStream = (es: FakeES) => {
     es.readyState = 2
     es.onerror?.()
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    setUnauthorizedHandler(() => {})
+  })
+
+  it('reopens after a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    const { es, stop, store } = setup()
+    closeStream(es)
+    await vi.advanceTimersByTimeAsync(3000)
     expect(es.closed).toBe(true)
-    vi.advanceTimersByTime(3000)
+    expect(FakeES.all).toHaveLength(2)
+    expect(store.getSnapshot().failure).toBe('')
+    stop()
+  })
+
+  it.each([429, 503])('reopens after %i', async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { code: 'x', message: 'm' } }, status)))
+    const { es, stop } = setup()
+    closeStream(es)
+    await vi.advanceTimersByTimeAsync(3000)
     expect(FakeES.all).toHaveLength(2)
     stop()
-    vi.useRealTimers()
+  })
+
+  it('reopens when the book still loads', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(book({ status: 'paused' }), 200)))
+    const { qc, es, stop } = setup()
+    closeStream(es)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(FakeES.all).toHaveLength(2)
+    expect(qc.getQueryData<Book>(qk.book('b1'))?.status).toBe('paused')
+    stop()
+  })
+
+  it('401 goes through the login flow and stops retrying', async () => {
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { code: 'unauthorized', message: 'Hết phiên' } }, 401)))
+    const { es, stop, store } = setup()
+    closeStream(es)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(onUnauthorized).toHaveBeenCalled()
+    expect(FakeES.all).toHaveLength(1)
+    expect(store.getSnapshot().failure).toBe('Hết phiên')
+    stop()
+  })
+
+  it('404 stops and surfaces the server message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { code: 'not_found', message: 'Truyện không còn' } }, 404)))
+    const { es, stop, store } = setup()
+    closeStream(es)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(FakeES.all).toHaveLength(1)
+    expect(store.getSnapshot()).toMatchObject({ failure: 'Truyện không còn', reconnecting: false })
+    stop()
   })
 })

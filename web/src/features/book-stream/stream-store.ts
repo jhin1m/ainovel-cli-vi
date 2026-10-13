@@ -7,6 +7,8 @@ export interface BookStreamState {
   events: readonly Event[]
   streamText: string
   reconnecting: boolean
+  /** Thông báo lỗi không thể tự khắc phục (đã dừng kết nối lại); rỗng nếu không có. */
+  failure: string
 }
 
 type Schedule = (fn: () => void) => void
@@ -24,8 +26,10 @@ export function createBookStreamStore(schedule: Schedule = frameSchedule) {
   const events = new Map<string, Event>()
   let streamText = ''
   let reconnecting = false
-  let state: BookStreamState = { events: [], streamText: '', reconnecting: false }
+  let failure = ''
+  let state: BookStreamState = { events: [], streamText: '', reconnecting: false, failure: '' }
   let dirty = false
+  let eventsDirty = false
   let queued = false
   const listeners = new Set<() => void>()
 
@@ -33,7 +37,10 @@ export function createBookStreamStore(schedule: Schedule = frameSchedule) {
     queued = false
     if (!dirty) return
     dirty = false
-    state = { events: [...events.values()], streamText, reconnecting }
+    // Giữ nguyên tham chiếu mảng khi event không đổi để component phụ thuộc vào nó không render lại.
+    const nextEvents = eventsDirty ? [...events.values()] : state.events
+    eventsDirty = false
+    state = { events: nextEvents, streamText, reconnecting, failure }
     listeners.forEach((l) => l())
   }
 
@@ -55,8 +62,16 @@ export function createBookStreamStore(schedule: Schedule = frameSchedule) {
 
     /** Mỗi lần kết nối (kể cả kết nối lại) server gửi lại toàn bộ: bỏ dữ liệu cũ. */
     reset() {
+      if (events.size > 0 || state.events.length > 0) eventsDirty = true
       events.clear()
       streamText = ''
+      reconnecting = false
+      failure = ''
+      touch()
+    },
+    /** Dừng hẳn: hiện lỗi thay cho trạng thái "đang kết nối lại". */
+    setFailure(message: string) {
+      failure = message
       reconnecting = false
       touch()
     },
@@ -68,6 +83,7 @@ export function createBookStreamStore(schedule: Schedule = frameSchedule) {
     /** Upsert theo id, giữ vị trí lần đầu xuất hiện; vượt giới hạn thì bỏ event cũ nhất. */
     upsertEvent(e: Event) {
       events.set(e.id, e)
+      eventsDirty = true
       if (events.size > MAX_EVENTS) {
         const oldest = events.keys().next()
         if (!oldest.done) events.delete(oldest.value)

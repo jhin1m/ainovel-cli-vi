@@ -33,6 +33,13 @@ export function parseBudget(raw: string): number {
   return Number(raw.replace(',', '.'))
 }
 
+/** Ngân sách mới khi tăng: phải vượt số đã dùng và không quá trần; ngược lại trả null. */
+export function parseRaisedBudget(raw: string, spent: number): number | null {
+  const v = parseBudget(raw)
+  if (raw.trim() === '' || !Number.isFinite(v) || v <= spent || v > MAX_BUDGET_USD) return null
+  return v
+}
+
 export function validateNewBook(v: NewBookInput): NewBookErrors {
   const errors: NewBookErrors = {}
   const prompt = v.prompt.trim()
@@ -42,7 +49,7 @@ export function validateNewBook(v: NewBookInput): NewBookErrors {
   if (v.model === '') errors.model = msg.newBook.modelRequired
   const budget = parseBudget(v.budget)
   if (v.budget.trim() === '' || !Number.isFinite(budget) || !(budget > 0) || budget > MAX_BUDGET_USD) {
-    errors.budget = msg.newBook.budgetInvalid
+    errors.budget = msg.newBook.budgetInvalid(MAX_BUDGET_USD)
   }
   return errors
 }
