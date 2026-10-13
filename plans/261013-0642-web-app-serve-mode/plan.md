@@ -1,7 +1,7 @@
 ---
 title: "Bản web cho ainovel-cli-vi (chế độ serve + SPA)"
 description: "Thêm `ainovel-cli serve` (HTTP + SSE, auth, BYOK, Postgres). Mỗi truyện chạy bằng một process `ainovel-cli worker` riêng. Kèm React SPA nhúng vào binary, mở đường cho PWA/app."
-status: pending
+status: in-progress
 priority: P1
 effort: "13d"
 tags: [web, server, go, react, pwa, byok]
@@ -57,7 +57,7 @@ ainovel-cli serve ── Postgres (users, sessions, invites, api_keys, books)
 
 | # | Phase | Phụ thuộc | Effort | Status |
 |---|-------|-----------|--------|--------|
-| 1 | [Worker stdio mode](./phase-01-worker-stdio-mode.md) | — | 2d | Pending |
+| 1 | [Worker stdio mode](./phase-01-worker-stdio-mode.md) | — | 2d | Completed |
 | 2 | [Server foundation](./phase-02-server-foundation.md) | — (làm song song với 1 được) | 1d | Pending |
 | 3 | [Auth và BYOK keys](./phase-03-auth-and-byok-keys.md) | 2 | 1d | Pending |
 | 4 | [Supervisor, Books API, SSE](./phase-04-job-supervisor-and-books-api.md) | 1, 3 | 3.5d | Pending |

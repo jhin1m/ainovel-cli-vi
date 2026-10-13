@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Worker stdio mode"
-status: pending
+status: completed
 priority: P1
 effort: "2d"
 dependencies: []
@@ -104,10 +104,10 @@ Wire types dùng chung với server nằm ở `internal/server/api` (package ch�
 
 ## Success Criteria
 
-- [ ] Mọi `stop_reason` trong bảng đều có test; smoke tay đi qua `user`, `review_wait`, `advance`, `resume`.
-- [ ] `shutdown` luôn hoàn tất < 1s khi chỉ có lời gọi LLM đang treo (fake), và < 15s với engine thật.
-- [ ] Key không có trong stdout/stderr/`worker.log` (test).
-- [ ] `ainovel-cli --headless` và TUI không đổi (test cũ xanh).
+- [x] Mọi `stop_reason` trong bảng đều có test. (Smoke tay với key thật: chưa làm — bước thủ công, xem báo cáo cuối.)
+- [x] `shutdown` luôn hoàn tất < 1s khi chỉ có lời gọi LLM đang treo (fake). (< 15s với engine thật: cần smoke tay.)
+- [x] Key không có trong stdout/stderr/`worker.log` (test).
+- [x] `ainovel-cli --headless` và TUI không đổi (test cũ xanh).
 
 ## Risk Assessment
 

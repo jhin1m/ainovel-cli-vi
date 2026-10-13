@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/voocel/ainovel-cli/assets"
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/entry/headless"
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/entry/tui"
+	"github.com/voocel/ainovel-cli/internal/entry/worker"
 	"github.com/voocel/ainovel-cli/internal/eval"
 	"github.com/voocel/ainovel-cli/internal/lang"
 	"github.com/voocel/ainovel-cli/internal/rules"
@@ -31,6 +34,10 @@ func main() {
 	// 子命令在常规 flag 解析之前拦截：eval 是离线评测 harness，参数体系独立。
 	if len(os.Args) > 1 && os.Args[1] == "eval" {
 		os.Exit(eval.Command(os.Args[2:]))
+	}
+	// worker là process con của `serve`: không đọc config trên đĩa, không chạy setup.
+	if len(os.Args) > 1 && os.Args[1] == "worker" {
+		os.Exit(runWorker())
 	}
 
 	opts, args, err := parseCLIOptions(os.Args[1:])
@@ -250,4 +257,16 @@ func loadPromptFrom(opts cliOptions, stdin io.Reader) (string, error) {
 		return strings.TrimSpace(string(data)), nil
 	}
 	return startup.LoadPromptFile(opts.PromptFile)
+}
+
+// runWorker chạy một lượt engine theo giao thức JSON Lines qua stdin/stdout.
+// SIGINT/SIGTERM được xử lý như lệnh shutdown.
+func runWorker() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := worker.Run(ctx, os.Stdin, os.Stdout, versionInfo().Version); err != nil {
+		fmt.Fprintln(os.Stderr, "worker:", err)
+		return 1
+	}
+	return 0
 }
