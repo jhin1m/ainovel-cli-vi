@@ -412,7 +412,9 @@ internal/
                   + events.go + usage*.go + budget.go + advance_gate.go + resume.go + cocreate.go
     imp/          外部小说语义编译导入：ingest → segment → analyze → synthesize → publish（纯状态推导 + LLM 作函数）
     exp/          已完成章节导出：TXT / EPUB 3；纯只读
-  entry/          tui (Bubble Tea) / headless / startup
+  entry/          tui (Bubble Tea) / headless / startup / worker (serve 模式的子进程入口，NDJSON over stdio)
+  server/         `ainovel-cli serve` Web 服务：auth / keys / books / jobs / httpx / db / secret / api / admin
+                  (详见 §9.2 与 docs/web-server.md)
   bootstrap/      config + ModelSet + provider failover + setup 向导
   eval/           离线评测（prompt/voice A/B、回归）
   diag/ errs/ models/ notify/ rules/ userrules/ stylestat/ ...
@@ -423,6 +425,9 @@ assets/
   voice.md        写作标准(文风层内置默认;三层覆盖见 docs/voice-layer.md)
   references/     写作技巧 + anti-ai-tone + 体裁模板等
   styles/         默认/奇幻/言情/悬疑(用户可覆盖/新增)
+
+web/              React SPA/PWA（构建产物 go:embed 进二进制；`make build`）
+deploy/           systemd unit / Caddyfile / backup.sh
 
 ../agentcore     通用 Agent 框架（go.work 兄弟目录，可加通用能力，不加业务）
 ../litellm       LLM 网关
@@ -440,6 +445,31 @@ assets/
 | 2026-07-15 | **`/import` 语义编译管线**：硬编码切分规则退役，改为 ingest→segment→analyze→synthesize→publish 分阶段编译；纯状态推导（`NextAction(Facts)`）+ 输入指纹绑定工件，全程可恢复幂等 | 切分随模型能力自然增强；无漂移阶段枚举；中断可续、控制面离线可测 |
 
 实测：hy3-preview free 12 章 / 73 分钟、mimo-v2.5-pro 10 章 / 8.4 万字，均一次跑完；长篇 gpt-5.4《凡骨》235 章 / 127 万字滚动规划闭环跑通（Coordinator 时代数据，Engine 时代首跑待补）。
+
+### 9.2 Web 服务模式（`ainovel-cli serve`）
+
+多用户 Web 外壳，**不改变上文的控制面**：每个"一次运行"仍是一个单书、单 Engine 循环的进程，只是 Entry 由 TUI 换成 `entry/worker`。运维与部署细节见 [docs/web-server.md](web-server.md)。
+
+```
+浏览器(SPA) ─REST+SSE─▶ server (Go net/http, Postgres)
+                          └─ jobs.Supervisor ─spawn─▶ `ainovel-cli worker` ─▶ Host ─▶ Engine ─▶ Worker/Arbiter ─▶ Store(书目录)
+                                    ◀── stdout NDJSON(事件/快照/退出原因)   ──▶ stdin NDJSON(init/steer/abort/shutdown)
+```
+
+| 包 | 职责 |
+|---|---|
+| `server/auth` · `keys` · `secret` | 会话与邀请码；用户 API key（BYOK）经 master key 加密存库；`secret` 为加解密封装 |
+| `server/books` | 书的 CRUD、章节阅读、TXT/EPUB 导出、SSE 端点（`GET /api/books/{id}/events`） |
+| `server/jobs` | Supervisor：排队/并发配额、spawn 与回收 worker、事件 Hub（扇出给 SSE）、崩溃/停机后的恢复标记 |
+| `server/httpx` · `db` · `api` · `admin` | 中间件(CSRF/限流/超时)、Postgres 与迁移、server↔worker↔前端共用的协议类型（`make gen` 生成 `web/src/api/types.gen.ts`）、`serve invite create` |
+| `entry/worker` | 读取 stdin 的 init（API key 仅经此传入），构造锁定配置并运行 Host；把 Host 事件映射为 NDJSON；引擎停止即退出 |
+
+要点：
+
+- **一次运行 = 一个 worker 进程**：停靠点（待验收/预算耗尽/用户停止/完本/出错）即进程退出；Continue/`/next`/Steer 在停机态会新起 worker，由 Engine 照常从 store 事实续跑（恢复语义与 §8.2 一致，不新增"自动续跑"）。server 重启时被打断的书仅被标记并重新入队，同样不属于 Host 内的续跑补丁。
+- **事实层仍只在书目录**：每本书的目录独占（Host 租约），Postgres 只存用户、会话、加密 key、书列表与 job 状态，不存创作事实。
+- **观察层纪律不变**：SSE 只转发 worker 事件与快照，不影响控制流；Hub 不持久化时间线，重连后由快照重建。
+- worker 进程环境仅 `HOME/PATH/LANG/TZ`，通知关闭，不读用户磁盘配置。
 
 ---
 

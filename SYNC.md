@@ -79,6 +79,7 @@ File upstream mà nhánh này có sửa (cần để ý khi merge `upstream/main
 | `.gitignore` | Thêm quy tắc cho `web/dist/*` (giữ `.gitkeep`) và `web/node_modules/`. |
 | `go.mod`, `go.sum` | Thêm dependency của server: pgx v5, goose v3, golang.org/x/crypto, golang.org/x/time. |
 | `README.md` | Thêm mục "Bản web" (trước mục "Cấu hình"). |
+| `docs/architecture.md` | Thêm mục §9.2 về chế độ web serve và các thư mục mới trong cây §9. |
 
 Cách giải conflict:
 
