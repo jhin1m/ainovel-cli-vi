@@ -1,0 +1,94 @@
+/* Design "Thư phòng mực". Nguồn duy nhất của màu/font/bo góc. */
+:root {
+  --font-ui: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Literata Variable', Georgia, 'Times New Roman', serif;
+
+  --bg: #f4f5f3;
+  --surface: #ffffff;
+  --fg: #15171a;
+  --muted: #5a606a;
+  --border: #e2e4e7;
+  --border-input: #d5d8dc;
+  --accent: #0e6e62;
+  --accent-hover: #0a5249;
+  --accent-soft: #e2f0ec;
+  --on-accent: #ffffff;
+  --track: #eceef0;
+  --switch-off: #c9cdd2;
+
+  /* Trạng thái truyện: chữ / nền */
+  --st-running: #0e6e62;
+  --st-running-bg: #e2f0ec;
+  --st-review: #3346a8;
+  --st-review-bg: #e7eaf8;
+  --st-budget: #8a4b08;
+  --st-budget-bg: #fbefdf;
+  --st-error: #b42318;
+  --st-error-bg: #fce9e7;
+  --st-idle: #4b5563;
+  --st-idle-bg: #eceef0;
+  --st-done: #ffffff;
+  --st-done-bg: #15171a;
+
+  /* Agent */
+  --ag-writer: #0e6e62;
+  --ag-writer-bg: #e2f0ec;
+  --ag-editor: #3346a8;
+  --ag-editor-bg: #e7eaf8;
+  --ag-architect: #7a3e12;
+  --ag-architect-bg: #f3e8de;
+  --ag-user-bg: #15171a;
+  --ag-user: #ffffff;
+
+  /* Reader */
+  --reader-light-bg: #ffffff;
+  --reader-light-fg: #1b1d21;
+  --reader-sepia-bg: #f4ecdc;
+  --reader-sepia-fg: #3a2e21;
+  --reader-dark-bg: #121417;
+  --reader-dark-fg: #dadde2;
+
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
+  --touch: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101214;
+    --surface: #181b1f;
+    --fg: #e6e8eb;
+    --muted: #9aa1ab;
+    --border: #2a2e34;
+    --border-input: #3a3f46;
+    --accent: #3fb5a3;
+    --accent-hover: #5cc8b7;
+    --accent-soft: #14312d;
+    --on-accent: #08201c;
+    --track: #262a30;
+    --switch-off: #4a5059;
+
+    --st-running: #5cc8b7;
+    --st-running-bg: #14312d;
+    --st-review: #9fb0f5;
+    --st-review-bg: #1d2447;
+    --st-budget: #f0b46a;
+    --st-budget-bg: #3a2810;
+    --st-error: #f4857a;
+    --st-error-bg: #3f1a17;
+    --st-idle: #b4bbc6;
+    --st-idle-bg: #262a30;
+    --st-done: #15171a;
+    --st-done-bg: #e6e8eb;
+
+    --ag-writer: #5cc8b7;
+    --ag-writer-bg: #14312d;
+    --ag-editor: #9fb0f5;
+    --ag-editor-bg: #1d2447;
+    --ag-architect: #e8b48c;
+    --ag-architect-bg: #3a2616;
+    --ag-user-bg: #e6e8eb;
+    --ag-user: #15171a;
+  }
+}

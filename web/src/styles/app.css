@@ -1,0 +1,140 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './fonts.css';
+
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-serif);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--border);
+  --color-line-input: var(--border-input);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-track: var(--track);
+  --color-switch-off: var(--switch-off);
+  --color-st-running: var(--st-running);
+  --color-st-running-bg: var(--st-running-bg);
+  --color-st-review: var(--st-review);
+  --color-st-review-bg: var(--st-review-bg);
+  --color-st-budget: var(--st-budget);
+  --color-st-budget-bg: var(--st-budget-bg);
+  --color-st-error: var(--st-error);
+  --color-st-error-bg: var(--st-error-bg);
+  --color-st-idle: var(--st-idle);
+  --color-st-idle-bg: var(--st-idle-bg);
+  --color-st-done: var(--st-done);
+  --color-st-done-bg: var(--st-done-bg);
+  --color-ag-writer: var(--ag-writer);
+  --color-ag-writer-bg: var(--ag-writer-bg);
+  --color-ag-editor: var(--ag-editor);
+  --color-ag-editor-bg: var(--ag-editor-bg);
+  --color-ag-architect: var(--ag-architect);
+  --color-ag-architect-bg: var(--ag-architect-bg);
+  --color-ag-user: var(--ag-user);
+  --color-ag-user-bg: var(--ag-user-bg);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Trong @layer base để utility màu (vd. text-on-accent) thắng; rule không layer sẽ đè lên chúng. */
+@layer base {
+  a {
+    color: var(--accent);
+  }
+  a:hover {
+    color: var(--accent-hover);
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .animate-spin {
+    animation: none;
+  }
+}
+
+/* Vùng an toàn cho thanh điều hướng dưới và mép màn hình. */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.reader-prose p {
+  margin: 0 0 1.1em;
+}
+.reader-prose h1,
+.reader-prose h2,
+.reader-prose h3 {
+  line-height: 1.3;
+  margin: 1.4em 0 0.6em;
+}
+.reader-prose blockquote {
+  margin: 1em 0;
+  padding-left: 1em;
+  border-left: 3px solid currentColor;
+  opacity: 0.85;
+}
+.reader-prose hr {
+  border: 0;
+  border-top: 1px solid currentColor;
+  opacity: 0.25;
+  margin: 2em 0;
+}
+.reader-prose a {
+  color: inherit;
+  text-decoration: underline;
+}
+.reader-prose {
+  overflow-wrap: anywhere;
+}
+
+.draft-para {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 5em;
+}

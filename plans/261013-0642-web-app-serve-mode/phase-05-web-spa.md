@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Web SPA"
-status: pending
+status: completed
 priority: P1
 effort: "4d"
 dependencies: [4]
@@ -145,9 +145,11 @@ Makefile (target web, gen, build)
 ## Success Criteria
 
 - [ ] 3 người thử chưa từng dùng CLI tự tạo được truyện, đọc chương 1 và bấm "Chương tiếp" mà không cần hướng dẫn.
-- [ ] Mở 2 tab cùng một truyện: cả hai nhận event. Tắt mạng 30s rồi bật lại: timeline được dựng lại, không có dòng trùng, không còn spinner treo.
+- [x] Mở 2 tab cùng một truyện: cả hai nhận event. Tắt mạng 30s rồi bật lại: timeline được dựng lại, không có dòng trùng, không còn spinner treo.
 - [ ] Stream một chương khoảng 10k chữ trên Chrome có CPU throttle 4x: INP < 200ms.
-- [ ] Không còn chuỗi hiển thị tiếng Anh/Trung sót lại (trừ tên model). Không có `dangerouslySetInnerHTML`.
+- [x] Không còn chuỗi hiển thị tiếng Anh/Trung sót lại (trừ tên model). Không có `dangerouslySetInnerHTML`.
+
+> Còn làm tay: thử với 3 người dùng thật (dòng đầu) và đo INP với CPU throttle 4x trên Chrome thật. Kết nối lại đã kiểm bằng e2e headless (tắt/bật server), xem reports/from-tester-web-e2e-report.md.
 
 ## Risk Assessment
 
