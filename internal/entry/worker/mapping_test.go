@@ -44,10 +44,23 @@ func TestMapSnapshotGolden(t *testing.T) {
 		Outline:  []host.OutlineSnapshot{{Chapter: 1, Title: "không được lộ"}},
 		Premise:  "nặng",
 		Synopsis: "nặng",
-	})
+	}, false)
 	b, _ := json.Marshal(snap)
 	want := `{"book_title":"Kiếm Đạo","provider":"openrouter","model_name":"m","phase":"writing","flow":"writing","runtime_state":"running","is_running":true,"status_label":"Đang viết","current_chapter":3,"total_chapters":30,"completed_count":2,"total_word_count":9000,"in_progress_chapter":3,"advance_mode":"review","has_advance_hold":true,"advance_hold_reason":"lý do","pending_steer":"x","recovery_label":"Khôi phục","agents":[{"name":"writer","state":"working","summary":"viết","tool":"draft_chapter"}],"total_cost_usd":0.5,"budget_limit_usd":5,"total_input_tokens":100,"total_output_tokens":50}`
 	if string(b) != want {
 		t.Fatalf("snapshot JSON lệch golden\n got: %s\nwant: %s", b, want)
+	}
+}
+
+func TestMapSnapshotSubscriptionZeroesCost(t *testing.T) {
+	snap := mapSnapshot(host.UISnapshot{
+		Provider: "zai-coding", ModelName: "glm-4.6", TotalCostUSD: 1.25, BudgetLimitUSD: 3,
+		TotalInputTokens: 1000, TotalOutputTokens: 400,
+	}, true)
+	if snap.TotalCostUSD != 0 || snap.BudgetLimitUSD != 0 {
+		t.Fatalf("thuê bao phải báo chi phí và trần ngân sách bằng 0: %+v", snap)
+	}
+	if snap.TotalInputTokens != 1000 || snap.TotalOutputTokens != 400 {
+		t.Fatalf("token phải giữ nguyên: %+v", snap)
 	}
 }

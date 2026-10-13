@@ -130,6 +130,9 @@ func modelErrDetail(err error) string {
 	if le.StatusCode != 0 {
 		parts = append(parts, fmt.Sprintf("HTTP %d", le.StatusCode))
 	}
+	if le.Code != "" {
+		parts = append(parts, "mã "+le.Code)
+	}
 	if le.Provider != "" {
 		parts = append(parts, le.Provider)
 	}

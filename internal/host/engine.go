@@ -15,6 +15,7 @@ import (
 	"github.com/voocel/agentcore/subagent"
 
 	"github.com/voocel/ainovel-cli/internal/arbiter"
+	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/flow"
@@ -507,6 +508,14 @@ func (e *engine) runWorker(ctx context.Context, inst *flow.Instruction) error {
 // 负责阻止不合法写入。
 func (e *engine) handleWorkerError(ctx context.Context, inst *flow.Instruction, werr error) (stop bool) {
 	msg := werr.Error()
+
+	// Provider từ chối hẳn (sai gói, hết quota): giao lại hay hỏi Arbiter đều gọi
+	// lại đúng provider đó và chắc chắn lỗi tiếp, nên dừng ngay.
+	if errorKind(werr, msg) == bootstrap.ErrKindProviderRejected {
+		e.failedKey = ""
+		e.pauseWithNotify(notify.KindWorkerFailure, "Nhà cung cấp model từ chối yêu cầu, đã tạm dừng: "+msg)
+		return true
+	}
 
 	key := instructionKey(inst)
 	if e.failedKey != key {

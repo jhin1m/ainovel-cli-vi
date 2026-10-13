@@ -24,6 +24,7 @@ import (
 	"github.com/voocel/agentcore"
 	"github.com/voocel/agentcore/subagent"
 	"github.com/voocel/ainovel-cli/internal/arbiter"
+	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	"github.com/voocel/ainovel-cli/internal/flow"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
@@ -1201,5 +1202,72 @@ func TestEngine_ExitRaceRestoresPendingDispatch(t *testing.T) {
 	}
 	if meta.AdvanceHold == nil {
 		t.Fatal("hold 事实动作应在退出清理中补执行")
+	}
+}
+
+// rejectedChatModel luôn trả lỗi provider từ chối hẳn và đếm số lần bị gọi.
+type rejectedChatModel struct{ calls atomic.Int32 }
+
+func (m *rejectedChatModel) err() error {
+	return &bootstrap.ProviderRejectedError{Kind: bootstrap.ProviderErrPlanMismatch, Code: "1113", Provider: "zai-coding", Model: "glm-4.7", Err: fmt.Errorf("1113: Insufficient balance")}
+}
+
+func (m *rejectedChatModel) Generate(context.Context, []agentcore.Message, []agentcore.ToolSpec, ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
+	m.calls.Add(1)
+	return nil, m.err()
+}
+
+func (m *rejectedChatModel) GenerateStream(context.Context, []agentcore.Message, []agentcore.ToolSpec, ...agentcore.CallOption) (<-chan agentcore.StreamEvent, error) {
+	m.calls.Add(1)
+	return nil, m.err()
+}
+
+func (m *rejectedChatModel) SupportsTools() bool { return true }
+
+// TestEngine_ProviderRejectedStopsWithoutRetry: provider từ chối hẳn thì engine
+// không giao lại việc và không hỏi Arbiter (cả hai đều gọi lại cùng provider).
+func TestEngine_ProviderRejectedStopsWithoutRetry(t *testing.T) {
+	st := storepkg.NewStore(t.TempDir())
+	if err := st.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := st.Progress.Init(2); err != nil {
+		t.Fatalf("progress: %v", err)
+	}
+	if err := st.Progress.UpdatePhase(domain.PhaseWriting); err != nil {
+		t.Fatalf("phase: %v", err)
+	}
+	if err := st.Outline.SaveOutline([]domain.OutlineEntry{{Chapter: 1, Title: "一", CoreEvent: "s"}}); err != nil {
+		t.Fatalf("outline: %v", err)
+	}
+
+	model := &rejectedChatModel{}
+	writer := subagent.Config{Name: "writer", Description: "rejected writer", Model: model, SystemPrompt: "test", MaxTurns: 5, MaxRetries: 7}
+	var arbiterCalls atomic.Int32
+	arb := &scriptedChatModel{fn: func([]agentcore.Message) agentcore.Message {
+		arbiterCalls.Add(1)
+		return testTextMsg(`{"action":"retry","dispatch":null,"reason":"thử lại"}`)
+	}}
+	e, events, done := newTestEngine(t, st, subagent.NewRunner(writer), arb)
+
+	if !e.start(nil) {
+		t.Fatal("engine start")
+	}
+	waitEngineDone(t, done)
+
+	if got := model.calls.Load(); got != 1 {
+		t.Fatalf("model của writer chỉ được gọi 1 lần, got %d", got)
+	}
+	if got := arbiterCalls.Load(); got != 0 {
+		t.Fatalf("không được hỏi Arbiter, got %d lần", got)
+	}
+	var tagged bool
+	for _, ev := range *events {
+		if ev.Kind == bootstrap.ErrKindProviderRejected {
+			tagged = true
+		}
+	}
+	if !tagged {
+		t.Fatalf("phải có event gắn Kind provider_rejected: %+v", *events)
 	}
 }

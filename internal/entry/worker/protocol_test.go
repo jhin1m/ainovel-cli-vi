@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/server/api"
 )
 
@@ -102,5 +103,53 @@ func TestDecodeCommand(t *testing.T) {
 		if _, err := decodeCommand([]byte(line)); err == nil {
 			t.Fatalf("%s phải lỗi", line)
 		}
+	}
+}
+
+// subscriptionInit là init của truyện Z.ai Coding Plan: budget 0, mục giá lấy
+// đúng từ registry thật như server gửi (entry glm, giá > 0).
+func subscriptionInit(t *testing.T) api.WorkerInit {
+	t.Helper()
+	e, ok := models.NewModelRegistry().Resolve("glm-4.6")
+	if !ok {
+		t.Fatal("registry thiếu glm-4.6")
+	}
+	msg := testInit("/data/b1", api.ActionStart)
+	msg.LLM.Provider, msg.LLM.Model = "zai-coding", "glm-4.6"
+	msg.BudgetUSD = 0
+	msg.Pricing = &api.ModelPricing{
+		Provider: e.Provider, ID: e.ID, Name: e.Name, ContextWindow: e.ContextWindow, MaxTokens: e.MaxTokens,
+		InputCostPer1M: e.InputCostPer1M, OutputCostPer1M: e.OutputCostPer1M,
+	}
+	return msg
+}
+
+func TestDecodeInitSubscription(t *testing.T) {
+	msg, err := decodeInit(mustJSON(t, subscriptionInit(t)))
+	if err != nil {
+		t.Fatalf("init thuê bao budget 0 phải hợp lệ: %v", err)
+	}
+	// Worker dùng registry thật: mục giá phải resolve đúng theo tên model.
+	if err := applyPricing(models.NewModelRegistry(), msg); err != nil {
+		t.Fatalf("applyPricing thuê bao: %v", err)
+	}
+
+	withBudget := subscriptionInit(t)
+	withBudget.BudgetUSD = 5
+	if _, err := decodeInit(mustJSON(t, withBudget)); err == nil {
+		t.Fatal("thuê bao gửi budget > 0 phải bị từ chối")
+	}
+
+	// Provider trả theo token (zai) vẫn đòi budget > 0 như cũ.
+	payg := subscriptionInit(t)
+	payg.LLM.Provider = "zai"
+	if _, err := decodeInit(mustJSON(t, payg)); err == nil {
+		t.Fatal("provider thường budget 0 phải bị từ chối")
+	}
+	// Thuê bao vẫn cần mục giá > 0 để init.
+	noPrice := subscriptionInit(t)
+	noPrice.Pricing.OutputCostPer1M = 0
+	if _, err := decodeInit(mustJSON(t, noPrice)); err == nil {
+		t.Fatal("thuê bao thiếu giá phải bị từ chối")
 	}
 }

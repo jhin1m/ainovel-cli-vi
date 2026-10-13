@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -68,24 +69,32 @@ type modelCache struct {
 	Models    []ModelEntry `json:"models"`
 }
 
-// StartPricingRefresh 起后台 goroutine 刷新模型数据。
-// 先读磁盘缓存（24h TTL），过期或不存在则拉新数据并落盘。
-// cacheDir 为空时跳过磁盘缓存，仍会尝试网络拉取。
+// StartPricingRefresh 起后台 goroutine 刷新模型数据（不随任何 context 停止，CLI 用）。
 func StartPricingRefresh(registry *ModelRegistry, cacheDir string) {
-	go func() {
-		models := loadCache(cacheDir)
-		if models == nil {
-			fetched, err := fetchModels()
-			if err != nil {
+	go RefreshPricing(context.Background(), registry, cacheDir)
+}
+
+// RefreshPricing 同步刷新模型数据：先读磁盘缓存（24h TTL），过期或不存在则拉新数据并落盘。
+// cacheDir 为空时跳过磁盘缓存，仍会尝试网络拉取。ctx 取消会中断拉取，且之后不再写缓存，
+// 调用方等它返回即可确定不会再有写入 cacheDir 的操作。
+func RefreshPricing(ctx context.Context, registry *ModelRegistry, cacheDir string) {
+	models := loadCache(cacheDir)
+	if models == nil {
+		fetched, err := fetchModels(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
 				slog.Warn("làm mới metadata model thất bại", "module", "models", "err", err)
-				return
 			}
-			models = fetched
-			saveCache(models, cacheDir)
+			return
 		}
-		registry.MergeModels(models)
-		slog.Info("metadata model đã sẵn sàng", "module", "models", "count", len(models))
-	}()
+		if ctx.Err() != nil {
+			return
+		}
+		models = fetched
+		saveCache(models, cacheDir)
+	}
+	registry.MergeModels(models)
+	slog.Info("metadata model đã sẵn sàng", "module", "models", "count", len(models))
 }
 
 func loadCache(cacheDir string) []ModelEntry {
@@ -135,9 +144,13 @@ func saveCache(models []ModelEntry, cacheDir string) {
 	}
 }
 
-func fetchModels() ([]ModelEntry, error) {
+func fetchModels(ctx context.Context) ([]ModelEntry, error) {
 	client := &http.Client{Timeout: fetchTimeout}
-	resp, err := client.Get(openRouterURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openRouterURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -3,10 +3,13 @@ package host
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/bootstrap"
+	"github.com/voocel/litellm"
 )
 
 func testObserver(events *[]Event) *observer {
@@ -207,5 +210,19 @@ func TestObserverToolErrorUpdatesSingleToolEventWithFullDetail(t *testing.T) {
 	}
 	if len(failed.Summary) >= len(failed.Detail) {
 		t.Fatalf("UI Summary 应短于完整 Detail: summary=%d detail=%d", len(failed.Summary), len(failed.Detail))
+	}
+}
+
+func TestErrorKindProviderRejected(t *testing.T) {
+	inner := litellm.NewHTTPError("glm", 429, `{"error":{"code":"1113","message":"Insufficient balance"}}`)
+	rejected := &bootstrap.ProviderRejectedError{Kind: bootstrap.ProviderErrPlanMismatch, Code: "1113", Provider: "zai-coding", Model: "glm-4.7", Err: inner}
+	if got := errorKind(fmt.Errorf("writer: %w", rejected), ""); got != "provider_rejected" {
+		t.Fatalf("chuỗi lỗi còn nguyên: errorKind = %q", got)
+	}
+	if got := errorKind(nil, "sub-agent lỗi: "+rejected.Error()); got != "provider_rejected" {
+		t.Fatalf("chuỗi đã ép: errorKind = %q", got)
+	}
+	if got := errorKind(inner, inner.Error()); got == "provider_rejected" {
+		t.Fatalf("lỗi chưa bọc không được gắn provider_rejected, got %q", got)
 	}
 }

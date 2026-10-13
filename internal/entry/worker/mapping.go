@@ -37,10 +37,17 @@ func (m *eventMapper) mapEvent(ev host.Event) api.Event {
 	}
 }
 
-func mapSnapshot(s host.UISnapshot) api.BookSnapshot {
+// mapSnapshot chuyển snapshot của engine sang DTO. Engine tính chi phí theo giá
+// registry kể cả với gói thuê bao, nên subscription=true đặt chi phí và trần
+// ngân sách về 0 (token giữ nguyên) để server không lưu chi phí USD giả.
+func mapSnapshot(s host.UISnapshot, subscription bool) api.BookSnapshot {
 	agents := make([]api.AgentSnapshot, 0, len(s.Agents))
 	for _, a := range s.Agents {
 		agents = append(agents, api.AgentSnapshot{Name: a.Name, State: a.State, Summary: a.Summary, Tool: a.Tool})
+	}
+	cost, limit := s.TotalCostUSD, s.BudgetLimitUSD
+	if subscription {
+		cost, limit = 0, 0
 	}
 	return api.BookSnapshot{
 		BookTitle:         s.BookTitle,
@@ -62,8 +69,8 @@ func mapSnapshot(s host.UISnapshot) api.BookSnapshot {
 		PendingSteer:      s.PendingSteer,
 		RecoveryLabel:     s.RecoveryLabel,
 		Agents:            agents,
-		TotalCostUSD:      s.TotalCostUSD,
-		BudgetLimitUSD:    s.BudgetLimitUSD,
+		TotalCostUSD:      cost,
+		BudgetLimitUSD:    limit,
 		TotalInputTokens:  s.TotalInputTokens,
 		TotalOutputTokens: s.TotalOutputTokens,
 	}

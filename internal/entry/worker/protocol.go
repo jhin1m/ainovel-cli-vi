@@ -115,7 +115,8 @@ func validateInit(msg api.WorkerInit) error {
 	if msg.AdvanceMode != api.AdvanceAuto && msg.AdvanceMode != api.AdvanceReview {
 		return fmt.Errorf("advance_mode %q không hợp lệ", msg.AdvanceMode)
 	}
-	if _, ok := LookupProvider(msg.LLM.Provider); !ok {
+	provider, ok := LookupProvider(msg.LLM.Provider)
+	if !ok {
 		return fmt.Errorf("provider %q không được phép", msg.LLM.Provider)
 	}
 	if strings.TrimSpace(msg.LLM.Model) == "" {
@@ -133,7 +134,13 @@ func validateInit(msg api.WorkerInit) error {
 	if msg.Style != "" && !styleNameRe.MatchString(msg.Style) {
 		return fmt.Errorf("style không hợp lệ")
 	}
-	if !(msg.BudgetUSD > 0) {
+	// Gói thuê bao không tính tiền theo token: không có ngân sách USD. Mục giá
+	// registry vẫn bắt buộc để init và resolve context window như mọi provider.
+	if provider.Subscription {
+		if msg.BudgetUSD != 0 {
+			return fmt.Errorf("budget_usd phải = 0 với provider thuê bao")
+		}
+	} else if !(msg.BudgetUSD > 0) {
 		return fmt.Errorf("budget_usd phải > 0")
 	}
 	if msg.Pricing == nil {

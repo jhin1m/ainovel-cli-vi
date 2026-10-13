@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/voocel/agentcore"
+
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/server/api"
@@ -24,12 +26,12 @@ func buildConfig(msg api.WorkerInit, bookDir string) (bootstrap.Config, error) {
 		ModelName:       msg.LLM.Model,
 		ReasoningEffort: msg.LLM.ReasoningEffort,
 		Providers: map[string]bootstrap.ProviderConfig{
-			provider.Name: {APIKey: msg.LLM.APIKey, BaseURL: provider.BaseURL},
+			provider.Name: {APIKey: msg.LLM.APIKey, Type: provider.Type, BaseURL: provider.BaseURL},
 		},
 		Roles:              nil,
 		Style:              msg.Style,
 		Language:           msg.Language,
-		Budget:             bootstrap.BudgetConfig{BookUSD: msg.BudgetUSD, HardStop: true},
+		Budget:             bootstrap.BudgetConfig{BookUSD: msg.BudgetUSD, HardStop: true}, // thuê bao: 0 = tắt
 		Notify:             bootstrap.NotifyConfig{Enabled: &notifyOff},
 		DisableUpdateCheck: true,
 	}
@@ -38,6 +40,24 @@ func buildConfig(msg api.WorkerInit, bookDir string) (bootstrap.Config, error) {
 		return bootstrap.Config{}, err
 	}
 	return cfg, nil
+}
+
+// NewProbeModel dựng model để server kiểm một key đã lưu, đi đúng đường của
+// worker (buildConfig + bootstrap.NewModelSet): cùng allowlist provider, BaseURL
+// cố định và lớp bọc lỗi provider. Không có tham số nào đổi được endpoint.
+func NewProbeModel(provider, model, apiKey string) (agentcore.ChatModel, error) {
+	cfg, err := buildConfig(api.WorkerInit{
+		LLM:      api.WorkerLLM{Provider: provider, Model: model, APIKey: apiKey},
+		Language: "vi",
+	}, "")
+	if err != nil {
+		return nil, err
+	}
+	set, err := bootstrap.NewModelSet(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return set.Default, nil
 }
 
 // applyPricing nạp giá model từ server vào registry của process rồi kiểm model

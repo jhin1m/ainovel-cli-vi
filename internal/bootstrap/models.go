@@ -394,8 +394,49 @@ func createModelFromConfig(providerKey, model string, pc ProviderConfig, cache m
 	if err != nil {
 		return nil, fmt.Errorf("provider %s (%s): %w: %w", providerKey, providerType, errs.ErrProvider, err)
 	}
-	cache[cacheKey] = m
-	return m, nil
+	wrapped := &rejectingModel{LiteLLMAdapter: m, provider: providerKey, model: model}
+	cache[cacheKey] = wrapped
+	return wrapped, nil
+}
+
+// rejectingModel đổi lỗi provider từ chối hẳn (vd. 1113 của z.ai) thành
+// ProviderRejectedError ngay tại lớp model, để mọi tầng retry phía trên (vòng
+// agentcore, llmretry) đều thấy là không retry. Nhúng adapter để giữ nguyên các
+// interface tuỳ chọn (Info, Capabilities, ProviderName…).
+type rejectingModel struct {
+	*llm.LiteLLMAdapter
+	provider string
+	model    string
+}
+
+func (m *rejectingModel) Generate(ctx context.Context, messages []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (*agentcore.LLMResponse, error) {
+	resp, err := m.LiteLLMAdapter.Generate(ctx, messages, tools, opts...)
+	if err != nil {
+		return nil, rejectIfFatal(m.provider, m.model, err)
+	}
+	return resp, nil
+}
+
+func (m *rejectingModel) GenerateStream(ctx context.Context, messages []agentcore.Message, tools []agentcore.ToolSpec, opts ...agentcore.CallOption) (<-chan agentcore.StreamEvent, error) {
+	source, err := m.LiteLLMAdapter.GenerateStream(ctx, messages, tools, opts...)
+	if err != nil {
+		return nil, rejectIfFatal(m.provider, m.model, err)
+	}
+	out := make(chan agentcore.StreamEvent, cap(source))
+	// Chuyển nguyên từng event như adapter và failoverModel: không select theo ctx,
+	// vì như vậy có thể làm rơi event lỗi cuối (context.Canceled) khi người dùng
+	// dừng, và agentcore sẽ hiểu nhầm thành stream đứt rồi báo "thử lại" giả.
+	// Adapter tự đóng source khi ctx kết thúc.
+	go func() {
+		defer close(out)
+		for ev := range source {
+			if ev.Type == agentcore.StreamEventError {
+				ev.Err = rejectIfFatal(m.provider, m.model, ev.Err)
+			}
+			out <- ev
+		}
+	}()
+	return out, nil
 }
 
 type failoverModel struct {

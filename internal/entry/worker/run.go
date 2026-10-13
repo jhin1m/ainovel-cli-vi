@@ -27,6 +27,7 @@ import (
 	"github.com/voocel/ainovel-cli/internal/entry/startup"
 	"github.com/voocel/ainovel-cli/internal/host"
 	"github.com/voocel/ainovel-cli/internal/lang"
+	"github.com/voocel/ainovel-cli/internal/llmretry"
 	"github.com/voocel/ainovel-cli/internal/models"
 	"github.com/voocel/ainovel-cli/internal/rules"
 	"github.com/voocel/ainovel-cli/internal/server/api"
@@ -34,6 +35,10 @@ import (
 
 // defaultMemoryLimit là GOMEMLIMIT mềm khi môi trường không đặt sẵn.
 const defaultMemoryLimit = 1 << 30
+
+// serveRetryLimits là trần retry của llmretry trong worker: key bị 429 kéo dài
+// không được giữ slot job mãi. CLI/TUI không đặt nên vẫn retry vô hạn.
+var serveRetryLimits = llmretry.Limits{MaxRetries: 10, MaxElapsed: 10 * time.Minute}
 
 // deps gom các phụ thuộc có thể thay trong test.
 type deps struct {
@@ -53,6 +58,7 @@ func Run(ctx context.Context, in io.Reader, out io.Writer, version string) error
 	if debug.SetMemoryLimit(-1) == math.MaxInt64 {
 		debug.SetMemoryLimit(defaultMemoryLimit)
 	}
+	llmretry.SetLimits(serveRetryLimits)
 	return run(ctx, in, out, deps{
 		version:       version,
 		newEngine:     newHostEngine,
@@ -138,6 +144,7 @@ type session struct {
 	stopping atomic.Bool  // đang đóng engine: job còn trong hàng đợi bị bỏ
 	inFlight atomic.Int32 // số job đã nhận nhưng chưa chạy xong
 	lastErr  atomic.Value // summary của event lỗi/cảnh báo gần nhất kể từ khi action xong (string)
+	rejected atomic.Value // lời giải thích khi provider từ chối hẳn, cùng vòng đời với lastErr (string)
 	sawHold  bool         // trong lượt chạy từng thấy AdvanceHold (chỉ loop đọc/ghi)
 
 	jobs     chan job
@@ -211,6 +218,7 @@ func run(ctx context.Context, in io.Reader, out io.Writer, d deps) error {
 		shutdownCh: make(chan struct{}),
 	}
 	s.lastErr.Store("")
+	s.rejected.Store("")
 	return s.loop(ctx, lines, scanErr)
 }
 
@@ -315,6 +323,7 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 			}
 			actionOK = true
 			s.lastErr.Store("") // lỗi trong lúc khởi động đã được action xử lý
+			s.rejected.Store("")
 			// Abort chỉ có tác dụng khi engine đang chạy: lệnh abort đến lúc action
 			// còn chạy (Start/Resume chưa trả về) được thực thi lại ở đây.
 			if s.aborted.Load() {
@@ -509,6 +518,12 @@ func (s *session) pump() {
 			if ev.Category == "ERROR" || ev.Level == "error" || (ev.Category == "SYSTEM" && ev.Level == "warn") {
 				s.lastErr.Store(ev.Summary)
 			}
+			// Event tạm dừng (SYSTEM warn) đến sau sẽ ghi đè lastErr, nên lý do
+			// provider từ chối được giữ riêng.
+			if ev.Kind == bootstrap.ErrKindProviderRejected {
+				code, _ := bootstrap.ParseProviderRejected(ev.Detail + "\n" + ev.Summary)
+				s.rejected.Store(providerRejectedMessage(code))
+			}
 			e := s.mapper.mapEvent(ev)
 			s.w.send(api.WorkerMessage{Type: api.MsgEvent, Event: &e})
 		case delta, ok := <-stream:
@@ -527,12 +542,18 @@ func (s *session) pump() {
 }
 
 func (s *session) sendSnapshot(snap host.UISnapshot) {
-	dto := mapSnapshot(snap)
+	dto := mapSnapshot(snap, IsSubscription(s.init.LLM.Provider))
 	s.w.send(api.WorkerMessage{Type: api.MsgSnapshot, Snapshot: &dto})
 }
 
 // stop: engine đã dừng → snapshot cuối → Close (xả hết event còn trong kênh) → exit.
 func (s *session) stop(snap host.UISnapshot, reason string) error {
+	// Engine tạm dừng vì provider từ chối thì snapshot có thể trông như đang chờ
+	// duyệt/giữ/còn can thiệp; khi đó phải báo lỗi để user thấy nguyên nhân.
+	if msg, _ := s.rejected.Load().(string); msg != "" &&
+		(reason == api.StopReviewWait || reason == api.StopHold || reason == api.StopPendingSteer) {
+		reason = api.StopError
+	}
 	s.sendSnapshot(snap)
 	exit := api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitStopped, StopReason: reason}
 	s.closeEngine()
@@ -540,6 +561,9 @@ func (s *session) stop(snap host.UISnapshot, reason string) error {
 		exit.Error, _ = s.lastErr.Load().(string)
 		if exit.Error == "" {
 			exit.Error = "Engine dừng không rõ lý do"
+		}
+		if msg, _ := s.rejected.Load().(string); msg != "" {
+			s.w.send(api.WorkerMessage{Type: api.MsgError, Code: api.ErrCodeProviderRejected, Message: msg})
 		}
 	}
 	s.w.finish(exit)
@@ -556,9 +580,31 @@ func (s *session) fail(err error) error {
 		s.w.finish(api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitStopped, StopReason: api.StopBudget})
 		return nil
 	}
-	s.w.send(api.WorkerMessage{Type: api.MsgError, Code: api.ErrCodeEngine, Message: err.Error()})
+	if code, ok := bootstrap.ProviderRejection(err, ""); ok {
+		s.w.send(api.WorkerMessage{Type: api.MsgError, Code: api.ErrCodeProviderRejected, Message: providerRejectedMessage(code)})
+	} else if msg, _ := s.rejected.Load().(string); msg != "" {
+		// Action trả lỗi đã ép chuỗi nhưng engine kịp phát event provider_rejected.
+		s.w.send(api.WorkerMessage{Type: api.MsgError, Code: api.ErrCodeProviderRejected, Message: msg})
+	} else {
+		s.w.send(api.WorkerMessage{Type: api.MsgError, Code: api.ErrCodeEngine, Message: err.Error()})
+	}
 	s.w.finish(api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitError, StopReason: api.StopError, Error: err.Error()})
 	return err
+}
+
+// providerRejectedMessages: lời giải thích theo mã gốc của provider. Chỉ dựng từ
+// bảng cố định, không chép body của provider; mỗi câu tối đa 300 rune.
+var providerRejectedMessages = map[string]string{
+	"1113": "Z.ai từ chối yêu cầu (mã 1113): key không thuộc gói Coding Plan, gói đã hết quota, hoặc model không có trong gói. Truyện này không đổi provider được: hãy thêm key dưới đúng provider (Z.ai Coding Plan cho key gói, Z.ai cho key trả theo token) rồi tạo truyện mới.",
+}
+
+const providerRejectedFallback = "Nhà cung cấp model từ chối yêu cầu: key không dùng được với provider hoặc model này. Hãy kiểm tra key, rồi thêm key dưới đúng provider và tạo truyện mới."
+
+func providerRejectedMessage(code string) string {
+	if msg, ok := providerRejectedMessages[code]; ok {
+		return msg
+	}
+	return providerRejectedFallback
 }
 
 // shutdown: server yêu cầu dừng (hoặc SIGTERM / stdin EOF). Close huỷ runCtx nên

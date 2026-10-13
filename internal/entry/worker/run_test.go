@@ -564,3 +564,112 @@ func TestRunShutdownWaitsForInFlightAction(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Lỗi 1113 giữa lượt chạy: engine phát event provider_rejected rồi tạm dừng
+// (SYSTEM warn ghi đè lastErr). Worker vẫn phải gửi lời giải thích có mã gốc.
+func TestRunProviderRejectedMidRun(t *testing.T) {
+	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
+	eng.snap.AdvanceMode = "auto"
+	h := startHarness(t, eng, nil)
+	init := testInit(h.bookDir, api.ActionResume)
+	init.AdvanceMode = api.AdvanceAuto
+	h.send(init)
+	waitCall(t, eng, "Resume")
+	rejected := &bootstrap.ProviderRejectedError{Kind: bootstrap.ProviderErrPlanMismatch, Code: "1113", Provider: "zai-coding", Model: "glm-4.7", Err: errors.New("1113: Insufficient balance or no resource package")}
+	eng.emit(host.Event{Time: time.Now(), Category: "DISPATCH", Level: "error", Kind: bootstrap.ErrKindProviderRejected,
+		Summary: "writer lỗi: provider_rejected: plan_mismatch…", Detail: rejected.Error()})
+	eng.emit(host.Event{Time: time.Now(), Category: "SYSTEM", Level: "warn", Summary: "Nhà cung cấp model từ chối yêu cầu, đã tạm dừng"})
+	h.expect(api.MsgEvent, time.Second)
+	eng.finish(func(s *host.UISnapshot) { s.Phase = "writing" })
+
+	m := h.expect(api.MsgError, 2*time.Second)
+	if m.Code != api.ErrCodeProviderRejected || !strings.Contains(m.Message, "mã 1113") {
+		t.Fatalf("error sai: %+v", m)
+	}
+	if strings.Contains(m.Message, "Insufficient balance") {
+		t.Fatalf("không được chép body của provider: %q", m.Message)
+	}
+	exit := h.expect(api.MsgExit, 2*time.Second)
+	if exit.Reason != api.ExitStopped || exit.StopReason != api.StopError {
+		t.Fatalf("exit sai: %+v", exit)
+	}
+	_ = h.wait(time.Second)
+}
+
+// Lỗi 1113 ngay lúc khởi động (arbiter khởi động): action Start trả lỗi → đường fail().
+func TestRunProviderRejectedAtStart(t *testing.T) {
+	eng := newFakeEngine()
+	eng.startErr = fmt.Errorf("phán quyết khởi động thất bại: %w", &bootstrap.ProviderRejectedError{
+		Kind: bootstrap.ProviderErrPlanMismatch, Code: "1113", Provider: "zai-coding", Model: "glm-4.7", Err: errors.New("1113: Insufficient balance"),
+	})
+	h := startHarness(t, eng, nil)
+	h.send(testInit(h.bookDir, api.ActionStart))
+	m := h.expect(api.MsgError, time.Second)
+	if m.Code != api.ErrCodeProviderRejected || !strings.Contains(m.Message, "mã 1113") || strings.Contains(m.Message, "Insufficient") {
+		t.Fatalf("error sai: %+v", m)
+	}
+	exit := h.expect(api.MsgExit, time.Second)
+	if exit.Reason != api.ExitError || exit.StopReason != api.StopError {
+		t.Fatalf("exit sai: %+v", exit)
+	}
+	_ = h.wait(time.Second)
+}
+
+// Lỗi thường lúc khởi động vẫn đi mã engine như cũ.
+func TestRunPlainStartErrorKeepsEngineCode(t *testing.T) {
+	eng := newFakeEngine()
+	eng.startErr = errors.New("mô hình trả lỗi 500")
+	h := startHarness(t, eng, nil)
+	h.send(testInit(h.bookDir, api.ActionStart))
+	if m := h.expect(api.MsgError, time.Second); m.Code != api.ErrCodeEngine {
+		t.Fatalf("error sai: %+v", m)
+	}
+	_ = h.wait(time.Second)
+}
+
+func TestProviderRejectedMessages(t *testing.T) {
+	all := []string{providerRejectedFallback}
+	for _, msg := range providerRejectedMessages {
+		all = append(all, msg)
+	}
+	for _, msg := range all {
+		if n := len([]rune(msg)); n > 300 {
+			t.Fatalf("message dài %d rune (> 300): %q", n, msg)
+		}
+	}
+	if got := providerRejectedMessage("1113"); !strings.Contains(got, "mã 1113") {
+		t.Fatalf("1113 phải nêu mã gốc: %q", got)
+	}
+	if got := providerRejectedMessage(""); got != providerRejectedFallback {
+		t.Fatalf("không có mã thì dùng câu chung: %q", got)
+	}
+	if serveRetryLimits.MaxRetries != 10 || serveRetryLimits.MaxElapsed != 10*time.Minute {
+		t.Fatalf("trần retry của worker serve phải là 10 lần / 10 phút: %+v", serveRetryLimits)
+	}
+}
+
+// Chế độ review: engine tạm dừng vì 1113 khi chưa có chương đang viết, snapshot
+// trông như chờ duyệt. Worker vẫn phải báo lỗi provider_rejected thay vì review_wait.
+func TestRunProviderRejectedOverridesReviewWait(t *testing.T) {
+	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
+	eng.snap.AdvanceMode = api.AdvanceReview
+	h := startHarness(t, eng, nil)
+	init := testInit(h.bookDir, api.ActionResume)
+	init.AdvanceMode = api.AdvanceReview
+	h.send(init)
+	waitCall(t, eng, "Resume")
+	eng.emit(host.Event{Time: time.Now(), Category: "DISPATCH", Level: "error", Kind: bootstrap.ErrKindProviderRejected,
+		Summary: "editor lỗi", Detail: "provider_rejected: plan_mismatch code=1113 provider=zai-coding model=glm-4.7: 1113: x"})
+	h.expect(api.MsgEvent, time.Second)
+	eng.finish(func(s *host.UISnapshot) { s.Phase = "writing" })
+
+	if m := h.expect(api.MsgError, 2*time.Second); m.Code != api.ErrCodeProviderRejected || !strings.Contains(m.Message, "mã 1113") {
+		t.Fatalf("error sai: %+v", m)
+	}
+	if exit := h.expect(api.MsgExit, 2*time.Second); exit.StopReason != api.StopError {
+		t.Fatalf("exit sai: %+v", exit)
+	}
+	_ = h.wait(time.Second)
+}

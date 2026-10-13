@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/voocel/agentcore"
+	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/domain"
 	storepkg "github.com/voocel/ainovel-cli/internal/store"
 )
@@ -21,6 +22,10 @@ import (
 // the rendered string fallback used when the chain has been flattened
 // (e.g. inside sub-agent JSON results).
 func errorKind(err error, msg string) string {
+	// Provider từ chối hẳn (vd. 1113) phải thắng nhãn rate_limit mà chuỗi lỗi bên trong mang theo.
+	if _, ok := bootstrap.ProviderRejection(err, msg); ok {
+		return bootstrap.ErrKindProviderRejected
+	}
 	if kind := agentcore.ErrorKind(err); kind != "" && kind != "unknown" {
 		return kind
 	}
