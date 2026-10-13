@@ -201,7 +201,7 @@ ToolResultMicrocompact → LightTrim → StoreSummaryCompact → FullSummary
 Cần Go 1.25 trở lên. Bản Việt hoá cài từ mã nguồn:
 
 ```bash
-git clone git@github.com:jhin1m/ainovel-cli-vi.git
+git clone https://github.com/jhin1m/ainovel-cli-vi.git
 cd ainovel-cli-vi
 go build -o ainovel-cli ./cmd/ainovel-cli
 ./ainovel-cli --version
@@ -307,9 +307,14 @@ tự khôi phục từ checkpoint gần nhất. Config `~/.ainovel/config.json` 
 
 ## Bản web
 
-Ngoài TUI và headless, `ainovel-cli serve` chạy engine như dịch vụ web nhiều người dùng (đăng nhập bằng mã mời, mỗi người
-dùng API key của mình, xem tiến độ realtime, đọc và xuất truyện, cài được như PWA). Build một binary có nhúng giao diện bằng
+Ngoài TUI và headless, `ainovel-cli serve` chạy engine như dịch vụ web nhiều người dùng (đăng ký tự do, mỗi người
+dùng API key của mình, xem tiến độ realtime, đọc và xuất truyện, cài được như PWA). Provider có Z.ai Coding Plan (gói thuê bao, không có ngân sách USD, giao diện hiện số token) và Z.ai (trả theo token), ngoài OpenRouter, Anthropic, Gemini, OpenAI, DeepSeek, Qwen, GLM, Grok. Build một binary có nhúng giao diện bằng
 `make build` (cần Go, Node 24 và pnpm). Cài đặt trên VPS, biến môi trường, backup và nâng cấp: [docs/web-server.md](docs/web-server.md).
+
+Web và CLI/TUI local khác nhau ở chỗ:
+
+- **Web:** server lo việc chạy, theo dõi được cả trên điện thoại, chỉ cần API key; chỉ dùng provider trong danh sách cố định (không có base URL riêng, Ollama hay Bedrock).
+- **CLI/TUI local:** máy bạn tự chạy, không cần server, dùng mọi provider kể cả base URL riêng; cài theo mục [Cài đặt](#cài-đặt).
 
 ## Cấu hình
 

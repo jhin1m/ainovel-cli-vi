@@ -413,7 +413,7 @@ internal/
     imp/          外部小说语义编译导入：ingest → segment → analyze → synthesize → publish（纯状态推导 + LLM 作函数）
     exp/          已完成章节导出：TXT / EPUB 3；纯只读
   entry/          tui (Bubble Tea) / headless / startup / worker (serve 模式的子进程入口，NDJSON over stdio)
-  server/         `ainovel-cli serve` Web 服务：auth / keys / books / jobs / httpx / db / secret / api / admin
+  server/         `ainovel-cli serve` Web 服务：auth / keys / books / jobs / httpx / db / secret / api
                   (详见 §9.2 与 docs/web-server.md)
   bootstrap/      config + ModelSet + provider failover + setup 向导
   eval/           离线评测（prompt/voice A/B、回归）
@@ -458,10 +458,10 @@ deploy/           systemd unit / Caddyfile / backup.sh
 
 | 包 | 职责 |
 |---|---|
-| `server/auth` · `keys` · `secret` | 会话与邀请码；用户 API key（BYOK）经 master key 加密存库；`secret` 为加解密封装 |
+| `server/auth` · `keys` · `secret` | 会话（开放注册）；用户 API key（BYOK）经 master key 加密存库；`secret` 为加解密封装 |
 | `server/books` | 书的 CRUD、章节阅读、TXT/EPUB 导出、SSE 端点（`GET /api/books/{id}/events`） |
 | `server/jobs` | Supervisor：排队/并发配额、spawn 与回收 worker、事件 Hub（扇出给 SSE）、崩溃/停机后的恢复标记 |
-| `server/httpx` · `db` · `api` · `admin` | 中间件(CSRF/限流/超时)、Postgres 与迁移、server↔worker↔前端共用的协议类型（`make gen` 生成 `web/src/api/types.gen.ts`）、`serve invite create` |
+| `server/httpx` · `db` · `api` | 中间件(CSRF/限流/超时)、Postgres 与迁移、server↔worker↔前端共用的协议类型（`make gen` 生成 `web/src/api/types.gen.ts`） |
 | `entry/worker` | 读取 stdin 的 init（API key 仅经此传入），构造锁定配置并运行 Host；把 Host 事件映射为 NDJSON；引擎停止即退出 |
 
 要点：

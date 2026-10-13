@@ -20,7 +20,7 @@ Cloudflare ─► Caddy (443) ─► ainovel-cli serve (127.0.0.1:8080) ── P
 - **Worker** là một process con cho mỗi lượt chạy của một truyện (chạy engine nguyên bản). Worker thoát khi engine dừng:
   chờ duyệt, hết ngân sách, người dùng dừng, xong truyện hoặc lỗi. "Tiếp tục", "Chương tiếp" hay steer khi đang dừng sẽ
   spawn worker mới. API key chỉ đi qua stdin của worker, không nằm trong env hay log.
-- **Postgres** giữ user, session, mã mời, API key mã hoá, danh sách truyện và trạng thái job. Nội dung truyện nằm ở
+- **Postgres** giữ user, session, API key mã hoá, danh sách truyện và trạng thái job. Nội dung truyện nằm ở
   `AINOVEL_DATA_DIR` dưới dạng tệp.
 - **SSE** (`GET /api/books/{id}/events`) đẩy event realtime, ping mỗi 20 giây để Cloudflare không cắt kết nối im lặng.
   Khi mất kết nối trình duyệt tự nối lại và dựng lại timeline từ snapshot.
@@ -35,7 +35,7 @@ Cloudflare ─► Caddy (443) ─► ainovel-cli serve (127.0.0.1:8080) ── P
 ## Build
 
 ```bash
-git clone git@github.com:jhin1m/ainovel-cli-vi.git && cd ainovel-cli-vi
+git clone https://github.com/jhin1m/ainovel-cli-vi.git && cd ainovel-cli-vi
 make build            # pnpm -C web install --frozen-lockfile && pnpm -C web build && go build -o ainovel-cli ./cmd/ainovel-cli
 ```
 
@@ -117,7 +117,12 @@ chỉ ghi được `/var/lib/ainovel`, `PrivateTmp`...). Fork/exec không bị c
    không mở ra ngoài). Ví dụ với ufw: `sudo ufw default deny incoming`, rồi với từng dải
    `sudo ufw allow from <dải> to any port 443 proto tcp`. Cập nhật dải IP trong `Caddyfile` và tường lửa khi Cloudflare đổi;
    lấy danh sách bằng `curl https://www.cloudflare.com/ips-v4` và `.../ips-v6`.
-5. Cloudflare: thêm rate limiting rule cho `/api/auth/*` (đăng nhập/đăng ký).
+5. **Bắt buộc:** thêm rate limiting rule của Cloudflare trước khi mở đăng ký. Đăng ký tự do, nên đây là lớp chặn chính; limiter trong server chỉ là lớp phụ (nằm trong bộ nhớ, mất khi restart). Các path cần che: `/api/auth/` (đăng nhập, đăng ký), `/api/auth/signup` (chặt hơn) và `/api/keys` (tạo, xoá, kiểm key). Số rule và chu kỳ đếm tuỳ gói:
+   - **Free** (1 rule, chu kỳ 10 giây, lọc theo path): một rule gộp, khớp khi URI path bắt đầu bằng `/api/auth/` hoặc `/api/keys`, đếm theo IP.
+   - **Pro trở lên** (từ 2 rule): rule gộp như trên, cộng một rule riêng chặt hơn cho `/api/auth/signup`.
+
+   Chọn ngưỡng theo lưu lượng thật, quy về chu kỳ của gói (vd. trên Free, vài request mỗi 10 giây cho mỗi IP). Xem
+   https://developers.cloudflare.com/waf/rate-limiting-rules/ để biết giới hạn hiện tại của từng gói.
 6. Kiểm tra SSE qua Cloudflare: mở một truyện đang chạy và để tab quá 5 phút, không được gặp lỗi 524.
 
 Xuất file bị server cắt sau 80 giây, Caddy chờ header tối đa 90 giây, còn Cloudflare cắt ở 100 giây; ba mốc này cần giữ đúng thứ tự.
@@ -140,27 +145,82 @@ tắt đệm cho SSE (`flush_interval -1`). Server đặt `AINOVEL_TRUSTED_PROXI
 | `AINOVEL_MAX_JOBS` | `4` | Số worker chạy đồng thời toàn server. |
 | `AINOVEL_MAX_JOBS_PER_USER` | `1` | Số worker đồng thời mỗi user. |
 | `AINOVEL_MAX_BOOKS_PER_USER` | `20` | Số truyện tối đa mỗi user. |
-| `AINOVEL_MAX_BOOK_BUDGET_USD` | `50` | Trần ngân sách cho một truyện (số > 0). |
+| `AINOVEL_MAX_BOOK_BUDGET_USD` | `50` | Trần ngân sách cho một truyện (số > 0). Truyện thuê bao (Z.ai Coding Plan) không có ngân sách USD. |
+| `AINOVEL_MAX_RUN_MINUTES` | `60` | Một lượt chạy dài hơn mức này thì nhường slot (chia lượt). `0` = tắt chia lượt. Giá trị 0..10080. |
+| `AINOVEL_SLICE_GRACE_MINUTES` | `20` | Thời gian ân hạn cho lượt bị cắt viết nốt chương đang dở. `0` = cắt ngay, bỏ chương đang viết dở. Giá trị 0..10080. |
 | `AINOVEL_MAX_SSE_PER_USER` | `4` | Kết nối SSE mỗi user. |
 | `AINOVEL_MAX_SSE_TOTAL` | `200` | Kết nối SSE toàn server. |
 | `AINOVEL_MAX_EXPORTS` | `2` | Số lượt xuất file chạy đồng thời. |
 
 Chỉ dùng khi phát triển (bị từ chối nếu không có `AINOVEL_DEV=true`): `AINOVEL_DEV` (tắt cookie Secure, cho phép HTTP),
 `AINOVEL_DATABASE_URL` (chuỗi kết nối trực tiếp trong env), `AINOVEL_DEV_WORKER_BIN` (chạy worker giả thay cho chính binary).
-Các biến số nguyên phải > 0. File secret có quyền rộng hơn 0600 chỉ bị cảnh báo; `LoadCredential` đã tự đặt quyền chặt.
+Các biến số nguyên phải > 0 (riêng hai biến phút ở trên nhận 0). File secret có quyền rộng hơn 0600 chỉ bị cảnh báo; `LoadCredential` đã tự đặt quyền chặt.
 
-## Tạo mã mời
+## Giới hạn khi mở đăng ký
 
-Đăng ký cần mã mời. Lệnh dùng cùng cấu hình với service nên cần trỏ tới hai file secret (thuộc root, nên chạy bằng root):
+Đăng ký tự do nên mọi tài nguyên tốn tiền đều có trần. Rule rate limit của Cloudflare (bước 5 mục Caddy và Cloudflare) là lớp chặn
+chính; các giới hạn dưới đây là lớp phụ trong server.
 
-```bash
-sudo env \
-  AINOVEL_DATABASE_URL_FILE=/etc/ainovel/database-url \
-  AINOVEL_MASTER_KEY_FILE=/etc/ainovel/master-key \
-  /usr/local/bin/ainovel-cli serve invite create --uses 1 --expires 7d
-```
+| Việc | Giới hạn | Lỗi khi vượt |
+|---|---|---|
+| Đăng ký | 30/phút theo IP (dùng chung với đăng nhập) và 10/ngày theo IP; IPv6 tính theo dải /64 | 429 `rate_limited` |
+| Tạo API key | 30/ngày/user; tối đa 20 key/user | 429 `rate_limited`; 409 `key_limit` |
+| Kiểm key (`POST /api/keys/test`) | 3/phút và 20/ngày/user; 60/ngày/IP; tối đa 4 lượt chạy đồng thời toàn server | 429 `rate_limited`; 429 `busy` |
+| Worker đồng thời | `AINOVEL_MAX_JOBS` (4) toàn server, `AINOVEL_MAX_JOBS_PER_USER` (1) mỗi user | truyện xếp hàng |
+| Số truyện | `AINOVEL_MAX_BOOKS_PER_USER` (20) mỗi user, không tính truyện đang xoá | 409 `book_limit` |
+| Đĩa | tạo truyện bị chặn khi ổ chứa data còn dưới 1 GiB | 507 `disk_full` |
 
-Lệnh in mã ra stdout. `--uses` là số lần dùng được (mặc định 1), `--expires` nhận `7d`, `12h`, `30m` hoặc `0` (không hết hạn).
+- **Chia lượt.** Khi server hết slot và có truyện của user khác đang chờ chạy được ngay, lượt chạy đã quá `AINOVEL_MAX_RUN_MINUTES`
+  (mặc định 60) bị cắt để nhường slot, mỗi lúc một worker. Lượt bị cắt dừng sau khi chương đang viết được commit; nếu quá
+  `AINOVEL_SLICE_GRACE_MINUTES` (mặc định 20) mà chưa tới ranh giới chương thì dừng hẳn. Đặt grace `0` để cắt ngay (bỏ chương
+  đang viết dở). Vì vậy một slot có thể bị giữ tối đa `MAX_RUN + SLICE_GRACE` (mặc định 80 phút). Đặt `AINOVEL_MAX_RUN_MINUTES=0`
+  để tắt chia lượt.
+- **Retry của model.** Trong worker của bản web, `llmretry` retry tối đa 10 lần hoặc 10 phút kể từ lần gọi đầu, hết trần thì
+  trả lỗi cuối, để key bị 429 kéo dài không giữ slot mãi. Trần này chỉ được đặt trong
+  `ainovel-cli worker`; CLI/TUI chạy local không đặt nên vẫn retry không giới hạn.
+- **Tài khoản bỏ hoang.** Tài khoản (không phải admin) tạo quá 30 ngày mà không có key, truyện lẫn session nào thì bị dọn tự động.
+- **Limiter nằm trong bộ nhớ.** Mất khi restart server. Mỗi limiter có trần số khoá theo dõi (100.000): limiter ngắn đầy thì từ
+  chối khoá mới (đóng an toàn); limiter theo ngày đầy thì bỏ khoá cũ nhất để không khoá mọi IP mới suốt cả ngày.
+- **Tạo key không cần mật khẩu.** `POST /api/keys` chỉ cần `provider`, `label`, `api_key`. Đổi mật khẩu vẫn đòi mật khẩu cũ.
+
+## Provider
+
+Allowlist cố định trong binary (`internal/entry/worker/providers.go`), mỗi provider có base URL biên dịch sẵn. Server không nhận
+base URL hay loại giao thức từ người dùng, nên không mở đường SSRF; Ollama, Bedrock và custom proxy vì thế chỉ có ở CLI/TUI.
+
+| `name` | Nhãn | Base URL | Tính phí |
+|---|---|---|---|
+| `openrouter` | OpenRouter | `https://openrouter.ai/api/v1` | theo token |
+| `anthropic` | Anthropic | mặc định của SDK | theo token |
+| `gemini` | Gemini | mặc định của SDK | theo token |
+| `openai` | OpenAI | mặc định của SDK | theo token |
+| `deepseek` | DeepSeek | mặc định của SDK | theo token |
+| `qwen` | Qwen | mặc định của SDK | theo token |
+| `zai-coding` | Z.ai Coding Plan | `https://api.z.ai/api/coding/paas/v4` | thuê bao: không có ngân sách USD, giao diện hiện số token |
+| `zai` | Z.ai | `https://api.z.ai/api/paas/v4` | theo token |
+| `glm` | GLM (bigmodel.cn) | mặc định của SDK | theo token |
+| `grok` | Grok | mặc định của SDK | theo token |
+
+Truyện thuê bao lưu `budget_usd = 0` và báo chi phí USD bằng 0. Mỗi truyện gắn với một provider; đổi key chỉ được sang key
+cùng provider (400 `provider_mismatch`), không đổi giữa `zai` và `zai-coding`.
+
+## Kiểm key và lỗi provider
+
+`POST /api/keys/test` chỉ nhận `key_id` của key đã lưu của chính user (không nhận key thô), theo giới hạn ở bảng trên. Server gọi
+provider đúng một lần (không retry) với `max_tokens` nhỏ. Response chỉ có `ok`, `model` (model dùng để kiểm), nhóm kết quả (`kind`: `ok`, `auth_failed`,
+`plan_mismatch`, `rate_limited`, `quota`, `network`, `unknown`), mã gốc nằm trong danh sách cho phép và câu thông báo do server
+viết, không bao giờ chứa văn bản lỗi của provider. Kết quả là `ok` cả khi provider từ chối tham số (400/422 không nói về key hay
+số dư) hoặc trả 200 nhưng hết `max_tokens` trước khi có chữ, vì khi đó provider đã nhận key.
+
+Khi provider từ chối hẳn một lượt chạy, truyện dừng với `stop_reason = provider_rejected` (mã lỗi `provider_rejected`), không
+retry ở tầng nào. Ví dụ mã 1113 của Z.ai: key không thuộc gói Coding Plan, gói hết quota hoặc model không có trong gói.
+Cách xử lý: thêm key dưới đúng provider (`zai-coding` cho key gói Coding Plan, `zai` cho key trả theo token) rồi tạo truyện mới.
+Truyện cũ không đổi provider được.
+
+## Chạy trên máy bạn
+
+Bản web là dịch vụ hosted: server lo việc chạy, người dùng chỉ cần API key. Muốn chạy trên máy riêng (mọi provider, kể cả
+base URL riêng, không cần server) hãy dùng CLI/TUI; cách cài và chạy ở [README.md](../README.md#cài-đặt).
 
 ## Backup và restore
 
@@ -200,15 +260,54 @@ sudo install -m 0755 ainovel-cli /usr/local/bin/ainovel-cli
 sudo systemctl start ainovel-serve      # truyện đang chạy và đang xếp hàng tự tiếp tục, không thành failed
 ```
 
-Truyện bị ngắt lúc stop được tiếp tục tự động khi server khởi động lại. Migration DB chạy tự động lúc khởi động; muốn quay lại bản cũ
-hãy cài lại binary cũ và restore DB từ bản sao lưu trước khi nâng cấp (nên chạy backup trước mỗi lần nâng cấp).
+Truyện bị ngắt lúc stop được tiếp tục tự động khi server khởi động lại. Migration DB chạy tự động lúc khởi động. Nên chạy
+backup (`sudo /usr/local/sbin/ainovel-backup`, xem mục trên) trước mỗi lần nâng cấp.
+
+### Nâng cấp lên bản này (đăng ký tự do, Z.ai)
+
+1. Chạy `deploy/backup.sh` (đã cài thành `ainovel-backup`) trước khi deploy. Đây là đường lùi duy nhất không mất dữ liệu.
+2. Thêm rate limiting rule Cloudflare như bước 5 mục Caddy và Cloudflare, trước khi mở đăng ký.
+3. Deploy như trên. Hai migration tự chạy khi khởi động:
+   - `0004_drop_invite_codes`: bỏ bảng `invite_codes`. Mã mời cũ không còn dùng được và không lấy lại được từ DB.
+   - `0005_books_budget_subscription`: nới `CHECK` của `books.budget_usd` từ `> 0` thành `>= 0`, để truyện thuê bao (Z.ai Coding Plan) lưu ngân sách 0.
+4. Lệnh `serve invite` đã bị gỡ. Đăng ký không còn mã mời.
+5. Người đang mở tab cũ cần lấy bản mới: bấm "Cập nhật" trên thông báo có phiên bản mới, hoặc đóng hết tab của trang rồi mở lại.
+   F5 thôi chưa đủ, vì service worker vẫn phục vụ bản cũ cho tới khi được cập nhật. Form cũ còn field đã bỏ (mã mời, mật khẩu
+   khi thêm key) nên bị từ chối 400.
+
+### Rollback
+
+Chạy binary cũ trên DB đã lên 0004/0005 sẽ hỏng: đăng ký trả 500 (binary cũ ghi vào bảng `invite_codes` đã mất) và truyện thuê bao
+không chạy được (binary cũ không biết provider `zai-coding`). Chọn một trong hai cách:
+
+- **Restore backup** trước nâng cấp (mục Backup và restore). Mất mọi dữ liệu sau thời điểm backup.
+- **Goose Down 0005 → 0004 rồi 0004 → 0003**, sau đó cài lại binary cũ. Cần có `goose` CLI (repo không kèm lệnh này; migration
+  dùng goose v3.27.0 và bảng mặc định `goose_db_version`). Service phải đang tắt:
+
+  ```bash
+  sudo systemctl stop ainovel-serve
+  go install github.com/pressly/goose/v3/cmd/goose@v3.27.0
+  # chạy trong thư mục mã nguồn của bản mới; mỗi lần `down` lùi một migration.
+  # Chuỗi kết nối đi qua biến môi trường, không nằm trên dòng lệnh (`ps` không thấy mật khẩu).
+  export GOOSE_DRIVER=postgres GOOSE_DBSTRING="$(sudo cat /etc/ainovel/database-url)"
+  goose -dir internal/server/db/migrations down   # 0005 → 0004
+  goose -dir internal/server/db/migrations down   # 0004 → 0003
+  unset GOOSE_DBSTRING
+  ```
+
+  Down 0005 đổi `budget_usd = 0` thành `0.01` rồi siết lại `CHECK (budget_usd > 0)` (không dùng `NOT VALID`, vì Postgres vẫn kiểm
+  CHECK ở mọi UPDATE). Truyện thuê bao mất ngân sách 0 và chỉ dừng với lỗi init trên binary cũ. Down 0004 dựng lại bảng
+  `invite_codes` rỗng. Chưa diễn tập trên DB thật; thử trên máy phụ trước.
 
 ## Giới hạn hiện tại
 
 - Worker cùng UID `ainovel` với server (chưa có UID riêng). Giảm thiểu: secret không nằm trong env của server hay worker,
   worker chỉ nhận bốn biến môi trường, `notify` bị tắt, API key chỉ đi qua stdin. UID riêng để sau.
 - Timeline realtime không giữ qua lần restart server; sau restart trình duyệt dựng lại từ snapshot.
-- Chưa có xác minh email hay quên mật khẩu (dùng mã mời); chưa xoay vòng master key; một master key duy nhất.
+- Đăng ký tự do, chưa có xác minh email hay quên mật khẩu. Rủi ro thật: ai cũng đăng ký được bằng email của người khác (chiếm email
+  trước khi chủ thật tới), và có thể dò xem một email đã đăng ký chưa qua lỗi 409 `email_taken`. Chưa có captcha; nếu log cho thấy
+  đăng ký hàng loạt (limiter 10/ngày/IP bị chạm thường xuyên) thì thêm Cloudflare Turnstile cho `/api/auth/signup`.
+- Chưa xoay vòng master key; một master key duy nhất.
 - Chưa đưa lên web: đồng sáng tác, import truyện có sẵn, đổi model theo vai trò hoặc giữa chừng, sửa chương bằng tay.
 - Một VPS một server (không chạy nhiều bản server dùng chung DB và thư mục data).
 - iOS PWA ngắt SSE khi khoá màn hình; trình duyệt tự nối lại khi mở lại.
