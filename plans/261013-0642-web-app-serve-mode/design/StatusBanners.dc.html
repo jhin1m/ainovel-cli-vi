@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Trạng thái và banner</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E62}a:hover{color:#0A5249}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<div style="width: 390px; height: 1160px; box-sizing: border-box; padding: 24px 16px; background: #F4F5F3; color: #15171A; font-family: 'Be Vietnam Pro', system-ui, sans-serif; display: flex; flex-direction: column; gap: 18px">
+
+  <section aria-labelledby="badges" style="display: flex; flex-direction: column; gap: 10px">
+    <h2 id="badges" style="margin: 0; font-size: 13px; font-weight: 600; color: #5A606A; text-transform: uppercase; letter-spacing: 0.06em">Nhãn trạng thái</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #ECEEF0; color: #4B5563">Đang xếp hàng</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #E2F0EC; color: #0E6E62">Đang viết</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #E7EAF8; color: #3346A8">Chờ duyệt</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #ECEEF0; color: #15171A">Tạm dừng</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #FBEFDF; color: #8A4B08">Hết ngân sách</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #15171A; color: #FFFFFF">Hoàn thành</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #FCE9E7; color: #B42318">Lỗi</span>
+      <span style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #ECEEF0; color: #4B5563">Đang khôi phục</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="b-budget" style="padding: 16px; border-radius: 16px; background: #FBEFDF; border: 1px solid #F0D6B4; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 id="b-budget" style="margin: 0; font-size: 16px; font-weight: 700; color: #6B3A06">Đã dùng hết 10,00 US$</h3>
+      <span style="font-size: 14px; line-height: 1.5; color: #6B3A06">Truyện dừng ở chương 22/40. Tăng ngân sách để AI viết tiếp từ chỗ đang dừng.</span>
+    </div>
+    <div style="display: flex; align-items: flex-end; gap: 8px">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+        <label for="newbudget" style="font-size: 13px; font-weight: 600; color: #6B3A06">Ngân sách mới (US$)</label>
+        <input id="newbudget" type="number" value="15" min="11" max="50" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E2C59C; border-radius: 10px; background: #FFFFFF; font-family: inherit; font-size: 15px; color: #15171A">
+      </div>
+      <button type="button" style="min-height: 44px; padding: 0 16px; border: none; border-radius: 10px; background: #8A4B08; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Tăng và viết tiếp</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="b-queue" style="padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E2E4E7; display: flex; gap: 12px; align-items: flex-start">
+    <span role="img" aria-label="Đang chờ" style="flex-shrink: 0; width: 18px; height: 18px; margin-top: 2px; border-radius: 9px; border: 2px solid #D5D8DC; border-top-color: #4B5563; box-sizing: border-box; animation: spin 1s linear infinite"></span>
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 id="b-queue" style="margin: 0; font-size: 15px; font-weight: 700">Đang xếp hàng · vị trí 2</h3>
+      <span style="font-size: 14px; line-height: 1.5; color: #5A606A">Bạn đang có một truyện khác chạy. Truyện này sẽ tự bắt đầu khi truyện kia dừng.</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="b-hold" style="padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E2E4E7; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 id="b-hold" style="margin: 0; font-size: 15px; font-weight: 700">Tạm dừng theo góp ý của bạn</h3>
+      <span style="font-size: 14px; line-height: 1.5; color: #5A606A">Lý do: "Dừng sau chương 15 để tôi đọc lại đoạn Lam Y xuất hiện".</span>
+    </div>
+    <button type="button" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid #D5D8DC; border-radius: 10px; background: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; color: #15171A; cursor: pointer">Tiếp tục viết</button>
+  </section>
+
+  <section aria-labelledby="b-fail" style="padding: 16px; border-radius: 16px; background: #FCE9E7; border: 1px solid #F4C7C1; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 id="b-fail" style="margin: 0; font-size: 15px; font-weight: 700; color: #8A1A12">Không viết tiếp được</h3>
+      <span style="font-size: 14px; line-height: 1.5; color: #8A1A12">Nhà cung cấp AI từ chối key (401). Kiểm tra lại key trong Cài đặt rồi thử lại.</span>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <a href="Keys.dc.html" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #E8A9A1; background: #FFFFFF; color: #8A1A12; text-decoration: none; font-size: 14px; font-weight: 600; display: flex; align-items: center">Mở Cài đặt</a>
+      <button type="button" style="min-height: 44px; padding: 0 16px; border: none; border-radius: 10px; background: #B42318; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Thử lại</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="b-recover" style="padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E2E4E7; display: flex; flex-direction: column; gap: 4px">
+    <h3 id="b-recover" style="margin: 0; font-size: 15px; font-weight: 700">Đang khôi phục sau khi máy chủ khởi động lại</h3>
+    <span style="font-size: 14px; line-height: 1.5; color: #5A606A">AI sẽ viết tiếp từ điểm lưu gần nhất, không mất chương đã xong.</span>
+  </section>
+
+  <div role="status" style="align-self: center; display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: #15171A; color: #FFFFFF; font-size: 14px; font-weight: 500">
+    <span style="width: 14px; height: 14px; border-radius: 7px; border: 2px solid #5A606A; border-top-color: #FFFFFF; box-sizing: border-box; animation: spin 0.9s linear infinite"></span>
+    Mất kết nối, đang kết nối lại…
+  </div>
+
+  <div role="status" style="align-self: center; display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: #8A4B08; color: #FFFFFF; font-size: 14px; font-weight: 500">
+    Thao tác quá nhanh, thử lại sau ít giây
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1160}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

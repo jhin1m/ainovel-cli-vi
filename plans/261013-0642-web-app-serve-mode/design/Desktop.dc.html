@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Truyện đang viết — máy tính</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E62}a:hover{color:#0A5249}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+textarea:focus{outline:2px solid #0E6E62;outline-offset:1px}
+</style>
+</helmet>
+<div style="min-height: 1000px; box-sizing: border-box; background: #F4F5F3; color: #15171A; font-family: 'Be Vietnam Pro', system-ui, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <aside style="flex: 1 1 220px; max-width: 100%; box-sizing: border-box; padding: 24px 16px; background: #FFFFFF; border-right: 1px solid #E2E4E7; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2.5Z"></path><path d="M8 7h6"></path><path d="M8 11h4"></path></svg>
+      <span style="font-size: 18px; font-weight: 700">AI Novel</span>
+    </div>
+    <a href="NewBook.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 12px; background: {{accent}}; color: #FFFFFF; text-decoration: none; font-size: 14px; font-weight: 600">+ Truyện mới</a>
+    <nav aria-label="Truyện của bạn" style="display: flex; flex-direction: column; gap: 2px">
+      <span style="padding: 0 8px 6px; font-size: 12px; font-weight: 600; color: #5A606A; text-transform: uppercase; letter-spacing: 0.06em">Thư viện</span>
+      <a href="Desktop.dc.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: 10px; background: #F4F5F3; color: #15171A; text-decoration: none; font-size: 14px; font-weight: 600">Kiếm Đạo Độc Tôn <span style="width: 8px; height: 8px; border-radius: 4px; background: {{accent}}; animation: pulse 1.4s ease-in-out infinite"></span></a>
+      <a href="ReviewWait.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: 10px; color: #15171A; text-decoration: none; font-size: 14px">Hà Nội, Mùa Mưa Cuối <span style="font-size: 11px; font-weight: 600; color: #3346A8">Chờ duyệt</span></a>
+      <a href="StatusBanners.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: 10px; color: #15171A; text-decoration: none; font-size: 14px">Thám Tử Phố Cổ <span style="font-size: 11px; font-weight: 600; color: #8A4B08">Hết ngân sách</span></a>
+      <a href="Reader.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 10px; border-radius: 10px; color: #15171A; text-decoration: none; font-size: 14px">Linh Khí Phục Hồi</a>
+    </nav>
+    <a href="Keys.dc.html" style="margin-top: auto; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 10px; color: #15171A; text-decoration: none; font-size: 14px">Cài đặt &amp; API key</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 32px 40px; display: flex; flex-direction: column; gap: 20px">
+    <div style="max-width: 1180px; width: 100%; display: flex; flex-direction: column; gap: 20px">
+      <header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; background: #E2F0EC; color: {{accent}}; font-size: 13px; font-weight: 600">
+            <span style="width: 8px; height: 8px; border-radius: 4px; background: currentColor; animation: pulse 1.4s ease-in-out infinite"></span>
+            Đang viết · Chương 14
+          </span>
+          <h1 style="margin: 0; font-family: 'Literata', Georgia, serif; font-size: 36px; font-weight: 600; letter-spacing: -0.01em">Kiếm Đạo Độc Tôn</h1>
+          <span style="font-size: 14px; color: #5A606A">Tu tiên · 13/60 chương · 38.214 chữ · 1,82 / 5 US$</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #D5D8DC; background: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; color: #15171A; cursor: pointer">Tạm dừng</button>
+          <button type="button" role="switch" aria-checked="false" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #D5D8DC; background: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; color: #15171A; cursor: pointer">Duyệt từng chương: Tắt</button>
+          <button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #D5D8DC; background: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; color: #15171A; cursor: pointer">Xuất EPUB</button>
+        </div>
+      </header>
+
+      <div style="height: 6px; border-radius: 3px; background: #E2E4E7; overflow: hidden"><div style="width: 22%; height: 6px; border-radius: 3px; background: {{accent}}"></div></div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+        <article aria-live="polite" style="flex: 999 1 480px; min-width: 0; box-sizing: border-box; padding: 32px 40px; background: #FFFFFF; border: 1px solid #E2E4E7; border-radius: 18px">
+          <div style="font-size: 12px; font-weight: 600; color: #5A606A; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px">Chương 14 · Đêm trăng ở Hàn Sơn tự · bản nháp trực tiếp</div>
+          <div style="max-width: 65ch; font-family: 'Literata', Georgia, serif; font-size: 19px; line-height: 1.8">
+            <p style="margin: 0 0 1em">Trăng lên khỏi đỉnh Hàn Sơn thì tiếng chuông chùa cũng vừa dứt. Lục Trầm ngồi xếp bằng trên bậc đá, thanh kiếm gãy đặt ngang gối, nghe gió lùa qua rừng tùng như ai đang lật từng trang sách cũ.</p>
+            <p style="margin: 0 0 1em">"Ngươi đến muộn ba ngày." Giọng nói vang lên sau lưng hắn, khàn và chậm, như thể người nói đã lâu không mở miệng. Lục Trầm không quay lại. Hắn chỉ khẽ siết chuôi kiếm, để tiếng kim loại rỉ sét lên tiếng thay mình.</p>
+            <p style="margin: 0">"Ba ngày," hắn đáp, "đủ để một thanh kiếm quên chủ cũ, nhưng không đủ để nó quên kẻ đã đúc ra nó<span style="display: inline-block; width: 2px; height: 22px; margin-left: 2px; vertical-align: -4px; background: {{accent}}; animation: blink 1s step-end infinite"></span></p>
+          </div>
+        </article>
+
+        <div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+          <section aria-labelledby="act" style="padding: 18px; background: #FFFFFF; border: 1px solid #E2E4E7; border-radius: 18px; display: flex; flex-direction: column">
+            <h2 id="act" style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #5A606A; text-transform: uppercase; letter-spacing: 0.06em">Hoạt động</h2>
+            <sc-for list="{{events}}" as="e" hint-placeholder-count="5">
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #E2E4E7">
+                <span style="{{e.chipStyle}}">{{e.agent}}</span>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0">
+                  <span style="font-size: 14px; line-height: 1.45">{{e.summary}}</span>
+                  <span style="font-size: 12px; color: #5A606A">{{e.meta}}</span>
+                </div>
+                <sc-if value="{{e.running}}" hint-placeholder-val="{{false}}">
+                  <span role="img" aria-label="Đang chạy" style="width: 16px; height: 16px; margin-top: 2px; border-radius: 8px; border: 2px solid #D5D8DC; border-top-color: {{accent}}; box-sizing: border-box; animation: spin 0.9s linear infinite"></span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </section>
+
+          <form style="padding: 18px; background: #FFFFFF; border: 1px solid #E2E4E7; border-radius: 18px; display: flex; flex-direction: column; gap: 10px">
+            <label for="steer-d" style="font-size: 15px; font-weight: 600">Góp ý cho AI</label>
+            <textarea id="steer-d" rows="3" placeholder="Ví dụ: cho Lam Y xuất hiện sớm hơn, trước khi hết cung 2." style="box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid #D5D8DC; border-radius: 12px; font-family: inherit; font-size: 15px; line-height: 1.5; resize: vertical; color: #15171A"></textarea>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+              <span style="font-size: 12px; color: #5A606A">AI có thể viết lại chương cũ nếu cần.</span>
+              <button type="button" style="min-height: 44px; padding: 0 18px; border: none; border-radius: 12px; background: {{accent}}; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Gửi</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0E6E62","options":["#0E6E62","#3346A8","#8A3B12","#15171A"]},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#0E6E62';
+    const tone = {
+      'Writer': 'background: #E2F0EC; color: ' + accent,
+      'Editor': 'background: #E7EAF8; color: #3346A8',
+      'Architect': 'background: #F3E8DE; color: #7A3E12',
+      'Bạn': 'background: #15171A; color: #FFFFFF'
+    };
+    const raw = [
+      { agent: 'Writer', summary: 'Đang viết bản nháp chương 14', meta: 'bắt đầu 42 giây trước', running: true },
+      { agent: 'Writer', summary: 'Lập kế hoạch chương 14: xung đột với Hàn Sơn lão tăng', meta: '12,4 giây', running: false },
+      { agent: 'Bạn', summary: 'Cho Lam Y xuất hiện sớm hơn, trước khi hết cung 2', meta: 'AI đã tiếp nhận · áp dụng từ chương 15', running: false },
+      { agent: 'Editor', summary: 'Đánh giá cung 2: nhịp tốt, cần thêm móc câu cuối chương', meta: '38,1 giây', running: false },
+      { agent: 'Writer', summary: 'Chốt chương 13: Kiếm gãy dưới mưa · 2.981 chữ', meta: '3 phút trước', running: false },
+      { agent: 'Architect', summary: 'Mở rộng cung 3 (chương 21–30)', meta: '9 phút trước', running: false }
+    ];
+    const events = raw.map((e) => ({
+      ...e,
+      chipStyle: 'flex-shrink: 0; width: 76px; text-align: center; padding: 3px 0; border-radius: 6px; font-size: 12px; font-weight: 600; ' + tone[e.agent]
+    }));
+    return { accent, events };
+  }
+}
+</script>
+</body>
+</html>

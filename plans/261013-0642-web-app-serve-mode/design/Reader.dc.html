@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Đọc chương</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E62}a:hover{color:#0A5249}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+
+  <header style="display: flex; align-items: center; gap: 4px; padding: 14px 8px 6px 12px">
+    <a href="ReviewWait.dc.html" aria-label="Quay lại truyện" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: inherit">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+      <span style="font-size: 12px; opacity: 0.7">Hà Nội, Mùa Mưa Cuối</span>
+      <span style="font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Chương 6 · Mưa trên phố Hàng Bạc</span>
+    </div>
+    <button type="button" onClick="{{toggleSheet}}" aria-expanded="{{sheetAria}}" aria-label="Cài đặt đọc" style="width: 44px; height: 44px; border: none; background: transparent; color: inherit; cursor: pointer; font-family: 'Literata', Georgia, serif; font-size: 18px; font-weight: 600">Aa</button>
+  </header>
+
+  <article style="{{articleStyle}}">
+    <h1 style="margin: 0 0 18px; font-size: 1.45em; font-weight: 600; line-height: 1.3">Mưa trên phố Hàng Bạc</h1>
+    <p style="margin: 0 0 1em">Mưa đầu tháng Mười không ồn ào như mưa hạ. Nó rơi chậm, đều, như ai đó đang kiên nhẫn đếm lại từng viên ngói trên những mái nhà ống phố Hàng Bạc.</p>
+    <p style="margin: 0 0 1em">Hà đứng nép dưới mái hiên tiệm bạc nhà ông Tư, tay vẫn cầm bức thư chưa dám mở. Phong bì đã ngả vàng, nét chữ trên đó nghiêng về bên phải như người viết vội, hoặc như người viết sợ mình đổi ý.</p>
+    <p style="margin: 0 0 1em">"Cô đợi ai à?" Ông Tư hỏi mà không ngẩng đầu khỏi chiếc nhẫn đang đánh bóng.</p>
+    <p style="margin: 0 0 1em">"Cháu đợi mưa tạnh thôi ạ."</p>
+    <p style="margin: 0">Ông cười, tiếng cười khô như giấy cũ. "Mưa tháng này thì đợi đến Tết. Người cần đến thì mưa cũng đến."</p>
+  </article>
+
+  <nav aria-label="Chuyển chương" style="display: flex; gap: 10px; padding: 14px 20px 22px">
+    <a href="Reader.dc.html" style="{{navStyle}}">‹ Chương 5</a>
+    <a href="ReviewWait.dc.html" style="{{navStyle}}">Chương 7 ›</a>
+  </nav>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{true}}">
+    <section aria-label="Cài đặt đọc" style="{{sheetStyle}}">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="font-size: 15px; font-weight: 600">Cỡ chữ</span>
+        <div style="display: flex; align-items: center; gap: 8px">
+          <button type="button" onClick="{{smaller}}" aria-label="Chữ nhỏ hơn" style="{{ctrlStyle}}">A−</button>
+          <span style="min-width: 40px; text-align: center; font-size: 14px">{{size}}px</span>
+          <button type="button" onClick="{{bigger}}" aria-label="Chữ lớn hơn" style="{{ctrlStyle}}">A+</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 15px; font-weight: 600">Kiểu chữ</span>
+        <div style="display: flex; gap: 8px">
+          <sc-for list="{{fonts}}" as="f" hint-placeholder-count="2">
+            <button type="button" onClick="{{f.pick}}" aria-pressed="{{f.pressed}}" style="{{f.style}}">{{f.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 15px; font-weight: 600">Nền</span>
+        <div style="display: flex; gap: 8px">
+          <sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
+            <button type="button" onClick="{{t.pick}}" aria-pressed="{{t.pressed}}" style="{{t.style}}">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: 'sepia', size: 18, serif: true, sheet: true };
+  }
+  renderVals() {
+    const palettes = {
+      light: { bg: '#FFFFFF', fg: '#1B1D21', panel: '#F4F5F3', line: '#E2E4E7', label: 'Sáng' },
+      sepia: { bg: '#F4ECDC', fg: '#3A2E21', panel: '#EADFC9', line: '#D9CBB0', label: 'Sepia' },
+      dark: { bg: '#121417', fg: '#DADDE2', panel: '#1E2126', line: '#2E333A', label: 'Tối' }
+    };
+    const p = palettes[this.state.theme];
+    const size = this.state.size;
+    const family = this.state.serif ? "'Literata', Georgia, serif" : "'Be Vietnam Pro', system-ui, sans-serif";
+    const pill = (on) => 'flex: 1; min-height: 44px; border-radius: 10px; font-family: inherit; font-size: 14px; cursor: pointer; border: 2px solid ' + (on ? p.fg : p.line) + '; font-weight: ' + (on ? '600' : '500');
+    const themes = Object.keys(palettes).map((k) => ({
+      label: palettes[k].label,
+      pressed: this.state.theme === k ? 'true' : 'false',
+      pick: () => this.setState({ theme: k }),
+      style: pill(this.state.theme === k) + '; background: ' + palettes[k].bg + '; color: ' + palettes[k].fg
+    }));
+    const fonts = [
+      { label: 'Có chân', serif: true, ff: "'Literata', Georgia, serif" },
+      { label: 'Không chân', serif: false, ff: "'Be Vietnam Pro', system-ui, sans-serif" }
+    ].map((f) => ({
+      label: f.label,
+      pressed: this.state.serif === f.serif ? 'true' : 'false',
+      pick: () => this.setState({ serif: f.serif }),
+      style: pill(this.state.serif === f.serif) + '; background: transparent; color: ' + p.fg + '; font-family: ' + f.ff
+    }));
+    return {
+      rootStyle: 'position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; font-family: \'Be Vietnam Pro\', system-ui, sans-serif; background: ' + p.bg + '; color: ' + p.fg,
+      articleStyle: 'flex: 1; overflow: hidden; padding: 12px 24px 0; max-width: 65ch; font-family: ' + family + '; font-size: ' + size + 'px; line-height: 1.75; text-wrap: pretty',
+      navStyle: 'flex: 1; min-height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 14px; font-weight: 600; color: ' + p.fg + '; border: 1px solid ' + p.line,
+      sheetStyle: 'position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 18px; border-radius: 20px 20px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.12); background: ' + p.panel + '; color: ' + p.fg,
+      ctrlStyle: 'width: 44px; height: 44px; border-radius: 10px; background: transparent; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 600; color: ' + p.fg + '; border: 1px solid ' + p.line,
+      size,
+      sheetOpen: this.state.sheet,
+      sheetAria: this.state.sheet ? 'true' : 'false',
+      toggleSheet: () => this.setState({ sheet: !this.state.sheet }),
+      smaller: () => this.setState({ size: Math.max(15, size - 1) }),
+      bigger: () => this.setState({ size: Math.min(24, size + 1) }),
+      themes,
+      fonts
+    };
+  }
+}
+</script>
+</body>
+</html>
