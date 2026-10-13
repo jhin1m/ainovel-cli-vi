@@ -49,7 +49,7 @@ Chuyển từ `exit.stop_reason` của worker:
 | `review_wait` | `waiting_review` |
 | `budget` | `budget_exhausted` |
 | `complete`, `nothing_to_resume` | `completed` |
-| `user`, `hold` | `paused` |
+| `user`, `hold`, `pending_steer` | `paused` |
 | `error` | `failed` (tăng `resume_failures`) |
 | `lock_busy` (lỗi init) | giữ `queued`, thử lại sau 5s/15s/45s, không tính vào `resume_failures` |
 
@@ -89,6 +89,13 @@ Process chết không có `exit` → `failed` + 200 dòng stderr cuối vào `la
 - **Đọc output:** stdout dùng `bufio.Scanner` buffer 4MB. stderr ghi vào `<book>/logs/worker-stderr.log` (cắt ở 5MB) và giữ ring 200 dòng.
 - **Mỗi truyện một state machine trong supervisor** (`idle → starting → running → stopping → idle`). Spawn kế tiếp, xoá, hay `RemoveAll` chỉ chạy khi `Wait()` của process trước đã trả về (flock chỉ nhả cuối `Close()`, `internal/host/host.go:935-969`).
 - **Đường dẫn** luôn suy từ ID trong DB, không bao giờ lấy từ input.
+
+### Bổ sung sau review phase 1 (13/10/2026)
+
+- `stop_reason` mới `pending_steer` (còn can thiệp chưa xử lý) → `paused`; lượt kế tiếp phải là `resume`, không phải `advance` (AdvanceOneChapter không xử lý `PendingSteer`).
+- Supervisor **luôn đọc stdout tới EOF** (worker chặn khi ống đầy và khi đó không thấy được shutdown/SIGTERM); quá hạn thì leo thang SIGTERM → SIGKILL.
+- Coi `Wait()` (process đã thoát) mới là lúc khoá thư mục được nhả, không phải message `exit`.
+- Không nhận `steer` cho truyện chưa từng khởi động thành công (snapshot rỗng / `phase` rỗng) → 409.
 
 ## Architecture
 

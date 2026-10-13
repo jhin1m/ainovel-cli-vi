@@ -88,3 +88,14 @@ func TestProvidersAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyPricingRejectsMismatchedEntry(t *testing.T) {
+	reg := models.NewModelRegistry()
+	msg := testInit("/b", api.ActionStart)
+	msg.LLM.Model = "anthropic/claude-sonnet-4"
+	// Giá gửi kèm là của model khác: không được chấp nhận dù registry có giá sẵn cho model đã chọn.
+	msg.Pricing = &api.ModelPricing{Provider: "openai", ID: "gpt-x-khac", InputCostPer1M: 1, OutputCostPer1M: 1}
+	if err := applyPricing(reg, msg); err == nil {
+		t.Fatal("pricing lệch model phải bị từ chối")
+	}
+}

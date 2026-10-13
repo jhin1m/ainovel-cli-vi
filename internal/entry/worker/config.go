@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/voocel/ainovel-cli/internal/bootstrap"
 	"github.com/voocel/ainovel-cli/internal/models"
@@ -58,6 +59,11 @@ func applyPricing(reg *models.ModelRegistry, msg api.WorkerInit) error {
 	entry, ok := reg.Resolve(msg.LLM.Model)
 	if !ok || !(entry.InputCostPer1M > 0) || !(entry.OutputCostPer1M > 0) {
 		return fmt.Errorf("model %q chưa có giá trong registry", msg.LLM.Model)
+	}
+	// Resolve có so khớp mờ: bắt buộc trúng đúng mục giá server gửi, tránh tính
+	// chi phí theo một model khác tình cờ chứa chuỗi tên.
+	if p := msg.Pricing; p != nil && (!strings.EqualFold(entry.Provider, p.Provider) || !strings.EqualFold(entry.ID, p.ID)) {
+		return fmt.Errorf("pricing không khớp model %q", msg.LLM.Model)
 	}
 	return nil
 }

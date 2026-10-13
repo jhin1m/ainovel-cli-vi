@@ -50,6 +50,7 @@ const (
 	StopHold            = "hold"
 	StopUser            = "user"
 	StopNothingToResume = "nothing_to_resume"
+	StopPendingSteer    = "pending_steer" // còn can thiệp chưa xử lý: server phải resume, không advance
 	StopError           = "error"
 )
 

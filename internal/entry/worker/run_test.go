@@ -482,3 +482,65 @@ func TestRunSkipsSetAdvanceModeWhenUnchanged(t *testing.T) {
 	h.expect(api.MsgExit, 2*time.Second)
 	_ = h.wait(time.Second)
 }
+
+func TestRunCommandAfterInitWaitsForAction(t *testing.T) {
+	eng := newFakeEngine()
+	eng.startBlock = make(chan struct{})
+	h := startHarness(t, eng, nil)
+	// init và steer đi cùng một lần ghi: steer không được chạy trước StartPrepared.
+	initLine := mustJSON(t, testInit(h.bookDir, api.ActionStart))
+	steerLine := mustJSON(t, api.WorkerCommand{Type: api.MsgSteer, ID: "s1", Text: "x"})
+	if _, err := h.stdin.Write(append(append(append(initLine, '\n'), steerLine...), '\n')); err != nil {
+		t.Fatal(err)
+	}
+	waitCall(t, eng, "StartPrepared")
+	time.Sleep(100 * time.Millisecond)
+	if slices.Contains(eng.Calls(), "Steer") {
+		t.Fatalf("Steer chạy trước khi action xong: %v", eng.Calls())
+	}
+	close(eng.startBlock)
+	if ack := h.expect(api.MsgAck, time.Second); ack.ID != "s1" {
+		t.Fatalf("ack sai: %+v", ack)
+	}
+	calls := eng.Calls()
+	if slices.Index(calls, "StartPrepared") > slices.Index(calls, "Steer") {
+		t.Fatalf("thứ tự sai: %v", calls)
+	}
+	eng.finish(func(s *host.UISnapshot) { s.Phase = "complete" })
+	h.expect(api.MsgExit, 2*time.Second)
+	_ = h.wait(time.Second)
+}
+
+func TestRunReportsConsumedHold(t *testing.T) {
+	eng := newFakeEngine()
+	h := startHarness(t, eng, nil)
+	init := testInit(h.bookDir, api.ActionResume)
+	init.AdvanceMode = api.AdvanceAuto
+	h.send(init)
+	waitCall(t, eng, "Resume")
+	eng.mu.Lock()
+	eng.snap.HasAdvanceHold = true // phán quyết can thiệp đặt hold "dừng sau chương 5"
+	eng.mu.Unlock()
+	time.Sleep(100 * time.Millisecond) // vài nhịp poll để worker thấy hold
+	// Gate tiêu thụ hold rồi mới dừng: snapshot cuối không còn hold.
+	eng.finish(func(s *host.UISnapshot) { s.HasAdvanceHold = false; s.Phase = "writing" })
+	if exit := h.expect(api.MsgExit, 2*time.Second); exit.StopReason != api.StopHold {
+		t.Fatalf("exit sai: %+v", exit)
+	}
+	_ = h.wait(time.Second)
+}
+
+func TestRunShutdownWaitsForInFlightAction(t *testing.T) {
+	eng := newFakeEngine()
+	eng.startBlock = make(chan struct{}) // không mở: chỉ Close mới giải phóng
+	h := startHarness(t, eng, nil)
+	h.send(testInit(h.bookDir, api.ActionStart))
+	waitCall(t, eng, "StartPrepared")
+	h.send(api.WorkerCommand{Type: api.MsgShutdown, ID: "x"})
+	if exit := h.expect(api.MsgExit, time.Second); exit.Reason != api.ExitShutdown {
+		t.Fatalf("exit sai: %+v", exit)
+	}
+	if err := h.wait(time.Second); err != nil {
+		t.Fatal(err)
+	}
+}

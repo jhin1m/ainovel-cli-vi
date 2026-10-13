@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,15 @@ import (
 func TestRunWithRealHostDoesNotLeakKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Cache giá còn hạn trong HOME: host.New không phải gọi OpenRouter (test không cần mạng).
+	cacheDir := filepath.Join(home, ".ainovel")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cache := fmt.Sprintf(`{"fetched_at":%q,"models":[]}`, time.Now().UTC().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(cacheDir, "models-cache.json"), []byte(cache), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	bookDir := t.TempDir()
 	t.Chdir(bookDir)
 

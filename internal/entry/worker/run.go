@@ -59,8 +59,8 @@ func Run(ctx context.Context, in io.Reader, out io.Writer, version string) error
 		registry:      models.DefaultRegistry(),
 		getwd:         os.Getwd,
 		prepare:       prepareRuntime,
-		pollInterval:  time.Second,
-		snapshotEvery: 3 * time.Second,
+		pollInterval:  3 * time.Second, // Snapshot() đọc nhiều file store: giữ nhịp như TUI
+		snapshotEvery: 9 * time.Second,
 		closeGrace:    20 * time.Second,
 	})
 }
@@ -135,8 +135,10 @@ type session struct {
 	mapper eventMapper
 
 	aborted  atomic.Bool  // người dùng đã bấm dừng (dính, kiểm lại sau action)
+	stopping atomic.Bool  // đang đóng engine: job còn trong hàng đợi bị bỏ
 	inFlight atomic.Int32 // số job đã nhận nhưng chưa chạy xong
-	lastErr  atomic.Value // summary của event lỗi gần nhất (string)
+	lastErr  atomic.Value // summary của event lỗi/cảnh báo gần nhất kể từ khi action xong (string)
+	sawHold  bool         // trong lượt chạy từng thấy AdvanceHold (chỉ loop đọc/ghi)
 
 	jobs     chan job
 	jobDone  chan struct{}
@@ -279,11 +281,12 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 		defer close(pumpDone)
 		s.pump()
 	}()
-	go s.dispatch(lines, scanErr)
-	go s.execute()
-
+	// Action phải vào hàng đợi trước khi luồng đọc chạy: lệnh runtime gửi ngay sau
+	// init không được chạy trước StartPrepared/Resume.
 	s.inFlight.Add(1)
 	s.jobs <- job{action: true}
+	go s.dispatch(lines, scanErr)
+	go s.execute()
 
 	ticker := time.NewTicker(s.d.pollInterval)
 	defer ticker.Stop()
@@ -291,6 +294,7 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 	done := s.eng.Done()
 	actionOK := false
 	doneSeen := false
+	jobFinished := false
 	idleTicks := 0
 	lastSent := time.Now()
 	var lastKey string
@@ -310,6 +314,7 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 				return s.stop(s.eng.Snapshot(), api.StopNothingToResume)
 			}
 			actionOK = true
+			s.lastErr.Store("") // lỗi trong lúc khởi động đã được action xử lý
 			// Abort chỉ có tác dụng khi engine đang chạy: lệnh abort đến lúc action
 			// còn chạy (Start/Resume chưa trả về) được thực thi lại ở đây.
 			if s.aborted.Load() {
@@ -322,14 +327,19 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 			}
 			doneSeen = true
 		case <-s.jobDone:
+			jobFinished = true
 		case <-ticker.C:
 			tick = true
 		}
 
-		if !tick && !doneSeen {
+		if !tick && !doneSeen && !jobFinished {
 			continue
 		}
+		jobFinished = false
 		snap := s.eng.Snapshot()
+		if snap.HasAdvanceHold {
+			s.sawHold = true
+		}
 		if tick {
 			key := fmt.Sprintf("%s|%s|%s|%d|%t", snap.Phase, snap.Flow, snap.RuntimeState, snap.CompletedCount, snap.IsRunning)
 			if key != lastKey || time.Since(lastSent) >= s.d.snapshotEvery {
@@ -350,7 +360,7 @@ func (s *session) loop(ctx context.Context, lines <-chan []byte, scanErr <-chan 
 		// Done là tín hiệu chính; hai nhịp liền không chạy là lưới an toàn cho
 		// lệnh không khởi động engine (vd. can thiệp chỉ trả lời câu hỏi).
 		if doneSeen || idleTicks >= 2 {
-			return s.stop(snap, stopReason(snap, s.aborted.Load()))
+			return s.stop(snap, stopReason(snap, s.aborted.Load(), s.sawHold && !snap.HasAdvanceHold))
 		}
 	}
 }
@@ -378,7 +388,7 @@ func (s *session) dispatch(lines <-chan []byte, scanErr <-chan error) {
 			case s.jobs <- job{cmd: cmd}:
 			default:
 				s.inFlight.Add(-1)
-				s.w.send(api.WorkerMessage{Type: api.MsgAck, ID: cmd.ID, Error: "worker đang bận, thử lại sau"})
+				s.w.send(api.WorkerMessage{Type: api.MsgAck, ID: cmd.ID, Code: api.ErrCodeBusy, Error: "worker đang bận, thử lại sau"})
 			}
 		}
 	}
@@ -396,6 +406,14 @@ func (s *session) requestShutdown() {
 // execute chạy job tuần tự trên goroutine riêng để luồng đọc không bị chặn.
 func (s *session) execute() {
 	for j := range s.jobs {
+		if s.stopping.Load() {
+			// Engine đang đóng: không chạm store nữa, lượt sau sẽ làm lại.
+			if !j.action {
+				s.w.send(api.WorkerMessage{Type: api.MsgAck, ID: j.cmd.ID, Code: api.ErrCodeBusy, Error: "worker đang dừng"})
+			}
+			s.inFlight.Add(-1)
+			continue
+		}
 		if j.action {
 			nothing, err := s.runAction()
 			s.actionCh <- actionResult{nothingToResume: nothing, err: err}
@@ -452,6 +470,10 @@ func (s *session) runCommand(cmd api.WorkerCommand) {
 	switch cmd.Type {
 	case api.MsgSteer:
 		err = s.eng.Steer(cmd.Text)
+		// Phán quyết reopen/dispatch có thể khởi động lại engine: giữ ý người dùng đã bấm dừng.
+		if s.aborted.Load() {
+			s.eng.Abort()
+		}
 	case api.MsgSetAdvanceMode:
 		err = s.eng.SetAdvanceMode(domain.ChapterAdvanceMode(cmd.Mode))
 	default:
@@ -477,7 +499,9 @@ func (s *session) pump() {
 			if strings.TrimSpace(ev.Summary) == "" {
 				continue
 			}
-			if ev.Category == "ERROR" || ev.Level == "error" {
+			// Engine tự dừng (bế tắc, lỗi phán quyết…) phát SYSTEM mức warn ngay trước
+			// Done: giữ lại làm lời giải thích cho exit.error.
+			if ev.Category == "ERROR" || ev.Level == "error" || (ev.Category == "SYSTEM" && ev.Level == "warn") {
 				s.lastErr.Store(ev.Summary)
 			}
 			e := s.mapper.mapEvent(ev)
@@ -548,6 +572,7 @@ func (s *session) shutdown() error {
 // closeEngine chạy Close ở goroutine riêng rồi chờ pump xả xong kênh event/stream,
 // tối đa closeGrace. Quá hạn thì vẫn trả về: process sắp thoát, OS nhả khoá thư mục.
 func (s *session) closeEngine() {
+	s.stopping.Store(true)
 	closed := make(chan struct{})
 	go func() {
 		s.eng.Close()
@@ -558,6 +583,17 @@ func (s *session) closeEngine() {
 	case <-closed:
 	case <-timeout:
 		return
+	}
+	// Close không chờ lời gọi đồng bộ đang chạy trên executor (StartPrepared/Resume
+	// sau khi arbiter bị huỷ vẫn ghi store): chờ nó xong trước khi báo exit, để
+	// server chỉ spawn lượt kế tiếp khi không còn ai ghi vào thư mục truyện.
+	for s.inFlight.Load() > 0 {
+		select {
+		case <-s.jobDone:
+		case <-time.After(20 * time.Millisecond):
+		case <-timeout:
+			return
+		}
 	}
 	if s.pumpDone == nil {
 		return

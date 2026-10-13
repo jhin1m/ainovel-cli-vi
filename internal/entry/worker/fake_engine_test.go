@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -100,7 +101,11 @@ func (f *fakeEngine) PrepareUserRules(string) error { f.record("PrepareUserRules
 func (f *fakeEngine) StartPrepared(string) error {
 	f.record("StartPrepared")
 	if f.startBlock != nil {
-		<-f.startBlock
+		select {
+		case <-f.startBlock:
+		case <-f.closeCalled: // host thật: Close huỷ runCtx, arbiter trả lỗi
+			return errors.New("context canceled")
+		}
 	}
 	if f.startErr != nil {
 		return f.startErr
@@ -131,7 +136,11 @@ func (f *fakeEngine) Continue(text string) error {
 func (f *fakeEngine) Steer(string) error {
 	f.record("Steer")
 	if f.steerBlock != nil {
-		<-f.steerBlock
+		select {
+		case <-f.steerBlock:
+		case <-f.closeCalled:
+			return errors.New("context canceled")
+		}
 	}
 	return nil
 }
