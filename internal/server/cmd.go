@@ -15,8 +15,20 @@ import (
 	"github.com/voocel/ainovel-cli/internal/server/db"
 )
 
+const serveUsage = `Cách dùng:
+  ainovel-cli serve                                         chạy server web
+  ainovel-cli serve invite create [--uses N] [--expires 7d] tạo mã mời
+
+Cấu hình qua biến môi trường (bắt buộc: AINOVEL_DATABASE_URL_FILE, AINOVEL_MASTER_KEY_FILE).
+Xem docs/web-server.md để biết đầy đủ.
+`
+
 // Command chạy `ainovel-cli serve [...]` và trả về exit code.
 func Command(args []string, version string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		fmt.Fprint(stdout, serveUsage)
+		return 0
+	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	cfg, err := LoadConfig(os.Getenv)
 	if err != nil {
