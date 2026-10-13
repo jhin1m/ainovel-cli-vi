@@ -24,7 +24,7 @@ import (
 const (
 	maxPromptRunes = 4000
 	maxSteerRunes  = 2000
-	exportTimeout  = 2 * time.Minute
+	exportTimeout  = 80 * time.Second
 )
 
 // Limits là các giới hạn liên quan tới truyện.

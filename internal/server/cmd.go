@@ -23,9 +23,21 @@ Cấu hình qua biến môi trường (bắt buộc: AINOVEL_DATABASE_URL_FILE, 
 Xem docs/web-server.md để biết đầy đủ.
 `
 
+// wantsHelp: `serve help`, hoặc -h/--help ở cuối (kể cả sau lệnh con như `invite create`).
+func wantsHelp(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if len(args) == 1 && args[0] == "help" {
+		return true
+	}
+	last := args[len(args)-1]
+	return last == "-h" || last == "--help"
+}
+
 // Command chạy `ainovel-cli serve [...]` và trả về exit code.
 func Command(args []string, version string, stdout, stderr io.Writer) int {
-	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+	if wantsHelp(args) {
 		fmt.Fprint(stdout, serveUsage)
 		return 0
 	}

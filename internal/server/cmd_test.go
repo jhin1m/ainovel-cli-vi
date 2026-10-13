@@ -9,9 +9,13 @@ import (
 func TestCommandHelpNeedsNoConfig(t *testing.T) {
 	t.Setenv("AINOVEL_DATABASE_URL_FILE", "")
 	t.Setenv("AINOVEL_MASTER_KEY_FILE", "")
-	for _, arg := range []string{"--help", "-h", "help"} {
+	for _, args := range [][]string{
+		{"--help"}, {"-h"}, {"help"},
+		{"invite", "--help"}, {"invite", "create", "--help"}, {"invite", "create", "-h"},
+	} {
+		arg := strings.Join(args, " ")
 		var out, errOut bytes.Buffer
-		if code := Command([]string{arg}, "test", &out, &errOut); code != 0 {
+		if code := Command(args, "test", &out, &errOut); code != 0 {
 			t.Fatalf("%s: exit %d, stderr %q", arg, code, errOut.String())
 		}
 		if !strings.Contains(out.String(), "invite create") {

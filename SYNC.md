@@ -85,13 +85,19 @@ Cách giải conflict:
 
 - `cmd/ainovel-cli/main.go`: giữ phần mới của upstream, chép lại hai khối `if len(os.Args) > 1 && os.Args[1] == "worker"` / `"serve"`
   ở đầu `main()` và hàm `runWorker` cuối file.
-- `go.mod` / `go.sum`: lấy bản của upstream rồi để Go tính lại, đừng sửa tay:
+- `go.mod` / `go.sum`: lấy bản của upstream, ghim lại đúng các version server đang dùng rồi mới `tidy`. Không chạy
+  `go mod tidy` trần: nó kéo dependency mới về `@latest`, mà các bản mới nhất của goose, x/crypto, x/time đã yêu cầu
+  `go 1.26`, làm dòng `go` bị nâng hoặc build trong image `golang:1.25` thất bại.
   ```bash
   git checkout --theirs go.mod go.sum
+  # Đọc version đang ghim ở bản của nhánh này: git show feat/web-app:go.mod | grep -E 'pgx|goose|x/crypto|x/time'
+  go get github.com/jackc/pgx/v5@v5.11.0 github.com/pressly/goose/v3@v3.27.0 \
+         golang.org/x/crypto@v0.55.0 golang.org/x/time@v0.15.0
   go mod tidy
+  git diff go.mod    # dòng `go` phải giữ nguyên 1.25.x; nếu bị nâng, hoàn lại và hạ version dependency vừa kéo
   ```
-  Nếu `go mod tidy` bỏ mất dependency của server thì `go build ./...` sẽ báo thiếu; chạy lại `go mod tidy` sau khi
-  chắc chắn mã `internal/server` còn trong cây.
+  Nếu version ghim đã đổi sau này, lấy số mới từ `go.mod` của nhánh feat/web-app thay vì các số trên.
+  Sau đó `go build ./...` để chắc không thiếu dependency (mã `internal/server` phải còn trong cây khi chạy tidy).
 - `.gitignore`: giữ cả hai bên (thêm khối "Bản web" vào cuối file).
 - `README.md`: xem hướng dẫn README ở trên, rồi thêm lại mục "Bản web".
 - Sau merge chạy thêm: `go test ./internal/server/... ./internal/entry/worker/...` (cần `AINOVEL_TEST_DATABASE_URL` để chạy test DB)

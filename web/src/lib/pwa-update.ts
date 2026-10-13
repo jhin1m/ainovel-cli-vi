@@ -38,6 +38,21 @@ export function useUpdateAvailable(): boolean {
   return useSyncExternalStore(updateStore.subscribe, updateStore.available)
 }
 
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+
+/** Hỏi trình duyệt kiểm tra bản mới định kỳ: PWA mở lâu hiếm khi tải lại toàn trang. */
+export function schedulePeriodicUpdate(
+  registration: { update: () => Promise<unknown> },
+  intervalMs = UPDATE_CHECK_INTERVAL_MS,
+): () => void {
+  const id = setInterval(() => {
+    registration.update().catch(() => {
+      // Offline hoặc server đang khởi động lại: lần sau thử tiếp.
+    })
+  }, intervalMs)
+  return () => clearInterval(id)
+}
+
 /** Đăng ký service worker; chỉ chạy ở bản build (dev không có sw). */
 export async function registerServiceWorker(): Promise<void> {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
@@ -45,6 +60,9 @@ export async function registerServiceWorker(): Promise<void> {
     const { registerSW } = await import('virtual:pwa-register')
     const update = registerSW({
       onNeedRefresh: () => updateStore.offer(() => void update(true)),
+      onRegisteredSW: (_url, registration) => {
+        if (registration) schedulePeriodicUpdate(registration)
+      },
     })
   } catch (err) {
     console.warn('service worker registration failed', err)

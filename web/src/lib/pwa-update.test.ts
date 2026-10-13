@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createUpdateStore } from './pwa-update'
+import { afterEach } from 'vitest'
+import { createUpdateStore, schedulePeriodicUpdate } from './pwa-update'
 
 describe('createUpdateStore', () => {
   it('bắt đầu không có bản mới', () => {
@@ -40,5 +41,22 @@ describe('createUpdateStore', () => {
     s.subscribe(l)()
     s.offer(() => {})
     expect(l).not.toHaveBeenCalled()
+  })
+})
+
+describe('schedulePeriodicUpdate', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('gọi update theo chu kỳ, nuốt lỗi và dừng được', async () => {
+    vi.useFakeTimers()
+    const update = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+    const stop = schedulePeriodicUpdate({ update }, 1000)
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(update).toHaveBeenCalledTimes(2)
+    stop()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(update).toHaveBeenCalledTimes(2)
   })
 })

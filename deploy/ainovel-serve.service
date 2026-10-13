@@ -5,6 +5,9 @@ Description=AI Novel (ainovel-cli serve)
 Documentation=https://github.com/jhin1m/ainovel-cli-vi/blob/vi/docs/web-server.md
 After=network-online.target postgresql.service
 Wants=network-online.target
+# Lỗi cấu hình làm service chết ngay khi khởi động: dừng thử lại sau 5 lần trong 60s.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=exec
@@ -40,7 +43,12 @@ RestartSec=3
 
 # Worker là process con (fork/exec chính binary này): không chặn fork/exec,
 # chỉ giới hạn tổng số task và bộ nhớ. Worker tự đặt oom_score_adj=500
-# nên khi thiếu RAM kernel giết worker trước server.
+# nên khi thiếu RAM kernel giết worker trước server. OOMPolicy=continue giữ server
+# sống khi một worker bị OOM (mặc định systemd sẽ dừng cả unit, ngắt mọi truyện đang chạy);
+# truyện của worker đó dừng ở trạng thái lỗi và người dùng bấm tiếp tục được.
+# OOMScoreAdjust âm bảo vệ server; worker tự nâng lên +500.
+OOMPolicy=continue
+OOMScoreAdjust=-500
 MemoryMax=3G
 TasksMax=512
 LimitCORE=0

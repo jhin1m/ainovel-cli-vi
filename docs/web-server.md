@@ -28,7 +28,7 @@ Cloudflare ─► Caddy (443) ─► ainovel-cli serve (127.0.0.1:8080) ── P
 ## Yêu cầu
 
 - Linux có systemd >= 250 (Debian 12, Ubuntu 24.04 trở lên).
-- Postgres 17 (chỉ bind localhost) với extension `citext` (có sẵn trong gói `postgresql-contrib`; từ PG13 chủ DB tự tạo được).
+- Postgres 13 trở lên (bản `apt` mặc định của Debian 12 và Ubuntu 24.04 dùng được; CI chạy trên 17), chỉ bind localhost, với extension `citext` (có sẵn trong gói `postgresql-contrib`; từ PG13 chủ DB tự tạo được).
 - Caddy 2.7+ và một tên miền trên Cloudflare.
 - Để build từ mã nguồn: Go 1.25+, Node 24, pnpm 12 (xem bên dưới). Có thể build ở máy khác rồi chép binary lên VPS.
 
@@ -94,18 +94,33 @@ journalctl -u ainovel-serve -f
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-Unit chạy bằng user `ainovel`, `KillMode=mixed`, `TimeoutStopSec=90`, hardening (`NoNewPrivileges`, `ProtectSystem=strict`,
+Unit chạy bằng user `ainovel`, `KillMode=mixed`, `TimeoutStopSec=90`, `OOMPolicy=continue` (một worker bị OOM không kéo sập
+cả service), giới hạn khởi động lại 5 lần/60 giây khi cấu hình sai, hardening (`NoNewPrivileges`, `ProtectSystem=strict`,
 chỉ ghi được `/var/lib/ainovel`, `PrivateTmp`...). Fork/exec không bị chặn vì server cần spawn worker.
 
 ### 5. Caddy và Cloudflare
 
-1. Trỏ DNS về VPS (bật proxy cam của Cloudflare), SSL/TLS mode **Full (strict)** (dùng Origin Certificate hoặc để Caddy tự xin chứng chỉ).
-2. Cài Caddy, chép `deploy/Caddyfile` vào `/etc/caddy/Caddyfile`, đổi tên miền, `sudo systemctl reload caddy`.
-3. Tường lửa: mở 443 chỉ cho dải IP Cloudflare (https://www.cloudflare.com/ips). Đóng 8080 và 5432 ra ngoài. Cập nhật
-   dải IP trong `Caddyfile` và tường lửa khi Cloudflare đổi; lấy danh sách bằng
-   `curl https://www.cloudflare.com/ips-v4` và `.../ips-v6`.
-4. Cloudflare: thêm rate limiting rule cho `/api/auth/*` (đăng nhập/đăng ký).
-5. Kiểm tra SSE qua Cloudflare: mở một truyện đang chạy và để tab quá 5 phút, không được gặp lỗi 524.
+1. Trỏ DNS về VPS (bật proxy cam của Cloudflare). Cloudflare đứng trước nên Caddy không tự xin chứng chỉ Let's Encrypt
+   được (challenge không qua proxy, và tường lửa chỉ mở 443); dùng **Cloudflare Origin Certificate**.
+2. Tạo Origin Certificate: Cloudflare dashboard > SSL/TLS > Origin Server > Create Certificate (RSA hoặc ECDSA, hostname là
+   tên miền của bạn, hạn tuỳ chọn). Lưu certificate vào `cf-origin.pem`, private key vào `cf-origin.key` (key chỉ hiện một lần), rồi:
+   ```bash
+   sudo install -m 0644 -o root -g caddy cf-origin.pem /etc/caddy/cf-origin.pem
+   sudo install -m 0640 -o root -g caddy cf-origin.key /etc/caddy/cf-origin.key
+   shred -u cf-origin.key 2>/dev/null || rm -f cf-origin.key   # xoá bản tạm
+   ```
+   Đặt SSL/TLS mode **Full (strict)**. Origin Certificate chỉ được Cloudflare tin, truy cập thẳng vào VPS sẽ báo chứng chỉ
+   không hợp lệ (đúng ý muốn). Hết hạn thì tạo cái mới và `systemctl reload caddy`.
+3. Cài Caddy, chép `deploy/Caddyfile` vào `/etc/caddy/Caddyfile`, đổi tên miền (dòng `tls` đã trỏ tới hai file trên),
+   `sudo caddy validate --config /etc/caddy/Caddyfile`, rồi `sudo systemctl reload caddy`.
+4. Tường lửa: mở 443 chỉ cho dải IP Cloudflare (https://www.cloudflare.com/ips), đóng mọi cổng khác trừ SSH của bạn (8080 và 5432
+   không mở ra ngoài). Ví dụ với ufw: `sudo ufw default deny incoming`, rồi với từng dải
+   `sudo ufw allow from <dải> to any port 443 proto tcp`. Cập nhật dải IP trong `Caddyfile` và tường lửa khi Cloudflare đổi;
+   lấy danh sách bằng `curl https://www.cloudflare.com/ips-v4` và `.../ips-v6`.
+5. Cloudflare: thêm rate limiting rule cho `/api/auth/*` (đăng nhập/đăng ký).
+6. Kiểm tra SSE qua Cloudflare: mở một truyện đang chạy và để tab quá 5 phút, không được gặp lỗi 524.
+
+Xuất file bị server cắt sau 80 giây, Caddy chờ header tối đa 90 giây, còn Cloudflare cắt ở 100 giây; ba mốc này cần giữ đúng thứ tự.
 
 Caddy đặt `X-Forwarded-For` bằng IP client thật (lấy từ `CF-Connecting-IP` chỉ khi kết nối đến từ dải Cloudflare) và
 tắt đệm cho SSE (`flush_interval -1`). Server đặt `AINOVEL_TRUSTED_PROXIES=127.0.0.1/32` nên chỉ tin header đó khi
@@ -156,14 +171,18 @@ sudo install -m 0750 deploy/backup.sh /usr/local/sbin/ainovel-backup
 sudo /usr/local/sbin/ainovel-backup        # ghi vào /var/backups/ainovel
 ```
 
-Đặt lịch bằng cron hoặc systemd timer, rồi đẩy `BACKUP_DIR` ra ngoài máy (restic, rclone, S3...). Master key sao lưu riêng như ở trên.
+Bản sao lưu ghi vào cùng VPS (file quyền 0600, thư mục 0700) nên **mất VPS là mất cả bản sao lưu**: phải đẩy `BACKUP_DIR` ra
+ngoài máy. Ví dụ: `rsync -a /var/backups/ainovel/ user@may-khac:ainovel-backup/`, hoặc `rclone sync /var/backups/ainovel remote:ainovel`
+(S3, B2...), hoặc `restic backup /var/backups/ainovel` nếu muốn mã hoá và khử trùng lặp. Đặt lịch bằng cron hoặc systemd timer
+chạy backup rồi đẩy đi. Bản dump chứa băm mật khẩu và API key đã mã hoá, nên chọn nơi lưu có kiểm soát truy cập.
+Master key sao lưu riêng như ở trên.
 
 Restore (trên máy mới đã cài đặt xong bước 1-3 với **cùng master key**, service đang tắt):
 
 ```bash
 sudo systemctl stop ainovel-serve
 sudo -u postgres dropdb ainovel && sudo -u postgres createdb -O ainovel ainovel
-pg_restore --no-owner --role=ainovel -d "$(sudo cat /etc/ainovel/database-url)" db-<stamp>.dump
+sudo -u postgres pg_restore --no-owner --role=ainovel -d ainovel db-<stamp>.dump   # chạy dưới user postgres, không đưa mật khẩu lên dòng lệnh
 sudo tar -C /var/lib/ainovel -xzf users-<stamp>.tar.gz
 sudo chown -R ainovel:ainovel /var/lib/ainovel
 sudo systemctl start ainovel-serve
@@ -207,6 +226,7 @@ hãy cài lại binary cũ và restore DB từ bản sao lưu trước khi nâng
 | Nhiều người bị giới hạn đăng nhập cùng lúc | Rate limit đang dùng chung một IP vì proxy chưa được tin; xem dòng trên. |
 | 524 hoặc SSE đứt sau ~100 giây | Caddy đang đệm (thiếu `flush_interval -1`) hoặc có lớp nén ở giữa; kiểm tra `Caddyfile`. |
 | Truyện không bắt đầu / đứng ở hàng đợi | Đạt `AINOVEL_MAX_JOBS` hoặc `AINOVEL_MAX_JOBS_PER_USER`; xem `journalctl`. |
-| Worker bị giết khi thiếu RAM | Kernel giết worker trước server (`oom_score_adj=500`). Tăng `MemoryMax` hoặc giảm `AINOVEL_MAX_JOBS`; mở truyện để xem trạng thái và bấm tiếp tục nếu cần. |
+| Worker bị giết khi thiếu RAM | Kernel giết worker trước server (`oom_score_adj=500`); `OOMPolicy=continue` giữ server và các truyện khác chạy tiếp. Tăng `MemoryMax` hoặc giảm `AINOVEL_MAX_JOBS`; mở truyện để xem trạng thái và bấm tiếp tục nếu cần. Nếu cả service bị restart khi OOM, kiểm tra unit đã có `OOMPolicy=continue` và đã `daemon-reload`. |
+| Cloudflare trả 525/526 | Caddy chưa có Origin Certificate: kiểm tra hai file `/etc/caddy/cf-origin.*` đọc được bởi nhóm `caddy` và `journalctl -u caddy`. |
 | `/healthz` trả `db: error` | Postgres không kết nối được. `disk_low: true` nghĩa là ổ chứa data còn dưới 1 GiB. |
 | `Permission denied` ghi vào data dir | `/var/lib/ainovel` phải thuộc user `ainovel`; unit chỉ cho phép ghi ở đó. |

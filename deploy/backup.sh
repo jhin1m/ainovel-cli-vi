@@ -21,10 +21,10 @@ case "$KEEP" in
   '' | *[!0-9]* | 0) echo "BACKUP_KEEP phải là số nguyên > 0" >&2; exit 2 ;;
 esac
 [ -r "$DB_URL_FILE" ] || { echo "không đọc được $DB_URL_FILE" >&2; exit 1; }
-[ -d "$DATA_DIR/users" ] || { echo "không thấy $DATA_DIR/users" >&2; exit 1; }
 command -v pg_dump >/dev/null || { echo "thiếu pg_dump" >&2; exit 1; }
 
 mkdir -p "$BACKUP_DIR"
+chmod 0700 "$BACKUP_DIR"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 tmp="$(mktemp -d "$BACKUP_DIR/.tmp.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
@@ -37,15 +37,23 @@ pg_dump -Fc --no-owner --dbname "$db_url" -f "$tmp/db-$stamp.dump"
 unset db_url
 
 # Thư mục data đang được worker ghi: tar có thể báo "file changed" (mã 1), bản sao
-# bản sao vẫn dùng được nhưng có thể lệch vài tệp đang ghi (truyện đang chạy). Chỉ lỗi nặng mới thoát.
-rc=0
-tar -C "$DATA_DIR" -czf "$tmp/users-$stamp.tar.gz" users || rc=$?
-if [ "$rc" -gt 1 ]; then
-  echo "tar thất bại (mã $rc)" >&2
-  exit 1
+# vẫn dùng được nhưng có thể lệch vài tệp đang ghi (truyện đang chạy). Chỉ lỗi nặng mới thoát.
+# Chưa có người dùng nào (cài mới) thì chưa có users/: chỉ sao lưu DB.
+files=("$tmp/db-$stamp.dump")
+if [ -d "$DATA_DIR/users" ]; then
+  rc=0
+  tar -C "$DATA_DIR" -czf "$tmp/users-$stamp.tar.gz" users || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "tar thất bại (mã $rc)" >&2
+    exit 1
+  fi
+  files+=("$tmp/users-$stamp.tar.gz")
+else
+  echo "chưa có $DATA_DIR/users, bỏ qua bản nén dữ liệu truyện" >&2
 fi
+chmod 0600 "${files[@]}"
 
-mv "$tmp/db-$stamp.dump" "$tmp/users-$stamp.tar.gz" "$BACKUP_DIR/"
+mv "${files[@]}" "$BACKUP_DIR/"
 
 # Xoay vòng: giữ KEEP bản mới nhất của mỗi loại.
 for prefix in db users; do

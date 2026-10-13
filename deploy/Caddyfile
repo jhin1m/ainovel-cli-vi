@@ -1,7 +1,8 @@
 # Cài tại /etc/caddy/Caddyfile. Đổi novel.example.com thành tên miền thật.
 #
-# Cloudflare: SSL/TLS = Full (strict). Tường lửa chỉ mở 443 cho dải IP Cloudflare,
-# nên mọi kết nối tới Caddy đều đến từ Cloudflare.
+# Cloudflare: SSL/TLS = Full (strict) với Cloudflare Origin Certificate (xem docs/web-server.md).
+# Tường lửa chỉ mở 443 cho dải IP Cloudflare, nên mọi kết nối tới Caddy đều đến từ Cloudflare.
+# Caddy không tự xin chứng chỉ được ở cấu hình này (challenge ACME không qua được proxy Cloudflare).
 #
 # Dải IP Cloudflare đổi theo thời gian. Lấy bản mới nhất và cập nhật danh sách dưới đây
 # (và luật tường lửa) khi Cloudflare thông báo:
@@ -22,6 +23,9 @@
 }
 
 novel.example.com {
+	# Origin Certificate tạo ở Cloudflare; file thuộc root:caddy, key quyền 0640.
+	tls /etc/caddy/cf-origin.pem /etc/caddy/cf-origin.key
+
 	# Nén mọi thứ trừ SSE: nén làm trình duyệt nhận event trễ.
 	@compressible {
 		not path /api/books/*/events
@@ -42,9 +46,11 @@ novel.example.com {
 		header_up X-Forwarded-For {client_ip}
 		header_up -CF-Connecting-IP
 		transport http {
-			# SSE giữ kết nối lâu; chỉ giới hạn lúc kết nối tới backend.
+			# SSE giữ kết nối lâu (backend gửi header ngay) nên chỉ giới hạn thời gian chờ header.
+			# Phải lớn hơn exportTimeout của server (80s) và nhỏ hơn giới hạn 100s của Cloudflare,
+			# để lượt xuất chậm bị server cắt trước thay vì Caddy trả 502.
 			dial_timeout 5s
-			response_header_timeout 60s
+			response_header_timeout 90s
 		}
 	}
 
