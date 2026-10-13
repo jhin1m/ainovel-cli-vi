@@ -19,7 +19,7 @@ func TestExportTXTCached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(p1, "/exports/2.txt") {
+	if !strings.Contains(p1, "/exports/2-") || !strings.HasSuffix(p1, ".txt") {
 		t.Fatalf("đường dẫn cache sai: %s", p1)
 	}
 	if name != "Truyện Thử Nghiệm.txt" {
@@ -119,4 +119,54 @@ func TestExportFileName(t *testing.T) {
 			t.Errorf("exportFileName(%q) = %q, muốn %q", in, got, want)
 		}
 	}
+}
+
+// Viết lại một chương (số chương không đổi) phải làm cache export mất hiệu lực.
+func TestExportCacheInvalidatedByRewrite(t *testing.T) {
+	dir := readerFixture(t)
+	e := NewExporter(2)
+	p1, _, err := e.Export(context.Background(), "u1", dir, "txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewStore(dir).Drafts.SaveFinalChapter(2, "Bản viết lại hoàn toàn khác, dài hơn trước nhiều."); err != nil {
+		t.Fatal(err)
+	}
+	p2, _, err := e.Export(context.Background(), "u1", dir, "txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2 == p1 {
+		t.Fatal("cache cũ vẫn được dùng sau khi viết lại chương")
+	}
+	data, _ := os.ReadFile(p2)
+	if !strings.Contains(string(data), "Bản viết lại hoàn toàn khác") || strings.Contains(string(data), "Nội dung chương 2.") {
+		t.Fatalf("export không phản ánh chương đã viết lại: %q", data)
+	}
+	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+		t.Fatalf("cache cũ phải bị dọn: %v", err)
+	}
+}
+
+// WaitDir chờ lượt xuất đang chạy trên thư mục trước khi cho xoá.
+func TestExporterWaitDirBlocksUntilExportEnds(t *testing.T) {
+	e := NewExporter(1)
+	e.enter("/d")
+	done := make(chan struct{})
+	go func() {
+		e.WaitDir("/d")
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("WaitDir trả về khi export còn chạy")
+	case <-time.After(50 * time.Millisecond):
+	}
+	e.leave("/d")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitDir không trả về sau khi export kết thúc")
+	}
+	e.WaitDir("/khac") // thư mục không có export: không chờ
 }

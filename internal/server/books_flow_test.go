@@ -359,8 +359,8 @@ func TestBookReviewFlow(t *testing.T) {
 	key := c.addKey("openrouter")
 
 	b := c.createBook(fastPrompt("Dòng sông"), key.ID, testModel, 5, api.AdvanceReview)
-	if b.Status != api.StatusQueued || b.PendingText == "" {
-		t.Fatalf("vừa tạo phải queued kèm việc chờ: %+v", b)
+	if b.Status != api.StatusQueued || b.PendingText != "" {
+		t.Fatalf("vừa tạo phải queued và không lộ prompt như góp ý đang chờ: %+v", b)
 	}
 	c.waitStatus(b.ID, api.StatusWaitingReview)
 	if n := c.chapterCount(b.ID); n != 1 {
@@ -588,7 +588,11 @@ func TestBookExport(t *testing.T) {
 	}
 
 	exportsDir := filepath.Join(env.bookDirOf(c, b.ID), "exports")
-	txtPath := filepath.Join(exportsDir, "3.txt")
+	cached, _ := filepath.Glob(filepath.Join(exportsDir, "3-*.txt"))
+	if len(cached) != 1 {
+		t.Fatalf("cache txt chưa được ghi: %v", cached)
+	}
+	txtPath := cached[0]
 	fi1, err := os.Stat(txtPath)
 	if err != nil {
 		t.Fatalf("cache txt chưa được ghi: %v", err)
@@ -615,7 +619,8 @@ func TestBookExport(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	if strings.Join(names, ",") != "3.epub,3.txt" {
+	if len(names) != 2 || !strings.HasPrefix(names[0], "3-") || !strings.HasSuffix(names[0], ".epub") ||
+		!strings.HasPrefix(names[1], "3-") || !strings.HasSuffix(names[1], ".txt") {
 		t.Fatalf("thư mục xuất phải chỉ có file cache và không còn file tạm: %v", names)
 	}
 }

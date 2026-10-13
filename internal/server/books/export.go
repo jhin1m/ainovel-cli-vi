@@ -2,6 +2,8 @@ package books
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -25,8 +27,10 @@ var (
 type Exporter struct {
 	sem chan struct{}
 
-	mu    sync.Mutex
-	users map[string]struct{}
+	mu     sync.Mutex
+	idle   *sync.Cond // báo khi một lượt xuất trên thư mục nào đó kết thúc
+	users  map[string]struct{}
+	active map[string]int // thư mục truyện → số lượt xuất đang chạy
 }
 
 // NewExporter tạo Exporter cho phép tối đa maxConcurrent lượt xuất cùng lúc
@@ -35,7 +39,55 @@ func NewExporter(maxConcurrent int) *Exporter {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
 	}
-	return &Exporter{sem: make(chan struct{}, maxConcurrent), users: make(map[string]struct{})}
+	e := &Exporter{sem: make(chan struct{}, maxConcurrent), users: make(map[string]struct{}), active: make(map[string]int)}
+	e.idle = sync.NewCond(&e.mu)
+	return e
+}
+
+// WaitDir chờ mọi lượt xuất đang chạy trên thư mục truyện kết thúc; gọi trước khi xoá
+// thư mục để export không tạo lại thư mục con sau khi truyện đã bị xoá.
+func (e *Exporter) WaitDir(dir string) {
+	e.mu.Lock()
+	for e.active[dir] > 0 {
+		e.idle.Wait()
+	}
+	e.mu.Unlock()
+}
+
+func (e *Exporter) enter(dir string) {
+	e.mu.Lock()
+	e.active[dir]++
+	e.mu.Unlock()
+}
+
+func (e *Exporter) leave(dir string) {
+	e.mu.Lock()
+	if e.active[dir]--; e.active[dir] <= 0 {
+		delete(e.active, dir)
+	}
+	e.mu.Unlock()
+	e.idle.Broadcast()
+}
+
+// contentSignature băm kích thước + mtime của file từng chương đã chốt và của các file
+// siêu dữ liệu ảnh hưởng nội dung xuất, nên viết lại/trau chuốt chương làm cache mất hiệu lực.
+func contentSignature(dir string, chapters []int, format string) string {
+	h := sha256.New()
+	stat := func(rel string) {
+		fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			fmt.Fprintf(h, "%s:-\n", rel)
+			return
+		}
+		fmt.Fprintf(h, "%s:%d:%d\n", rel, fi.Size(), fi.ModTime().UnixNano())
+	}
+	for _, n := range chapters {
+		stat(fmt.Sprintf("chapters/%02d.md", n))
+	}
+	for _, rel := range []string{"meta/book.json", "outline.json", "layered_outline.json"} {
+		stat(rel)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // acquire giữ chỗ không chặn; trả hàm giải phóng.
@@ -61,8 +113,8 @@ func (e *Exporter) acquire(userID string) (func(), bool) {
 	}, true
 }
 
-// Export trả về đường dẫn file xuất và tên tải về. Kết quả được cache theo số chương
-// đã hoàn thành tại <dir>/exports/<N>.<ext>.
+// Export trả về đường dẫn file xuất và tên tải về. Kết quả được cache tại
+// <dir>/exports/<N>-<chữ ký nội dung>.<ext>, N là số chương đã hoàn thành.
 func (e *Exporter) Export(ctx context.Context, userID, dir, format string) (path, downloadName string, err error) {
 	var f exp.Format
 	switch format {
@@ -78,6 +130,8 @@ func (e *Exporter) Export(ctx context.Context, userID, dir, format string) (path
 		return "", "", ErrExportBusy
 	}
 	defer release()
+	e.enter(dir)
+	defer e.leave(dir)
 
 	st := store.NewStore(dir)
 	p, err := st.Progress.Load()
@@ -94,11 +148,12 @@ func (e *Exporter) Export(ctx context.Context, userID, dir, format string) (path
 	downloadName = exportFileName(title, format)
 
 	exportsDir := filepath.Join(dir, "exports")
-	final := filepath.Join(exportsDir, fmt.Sprintf("%d.%s", len(p.CompletedChapters), format))
+	final := filepath.Join(exportsDir, fmt.Sprintf("%d-%s.%s", len(p.CompletedChapters), contentSignature(dir, p.CompletedChapters, format), format))
 	if fi, statErr := os.Stat(final); statErr == nil && fi.Mode().IsRegular() {
 		return final, downloadName, nil
 	}
-	if err := os.MkdirAll(exportsDir, 0o755); err != nil {
+	// Mkdir (không đệ quy): thư mục truyện đã bị xoá thì không được tạo lại.
+	if err := os.Mkdir(exportsDir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", "", fmt.Errorf("tạo thư mục xuất: %w", err)
 	}
 	// Tên tạm kết thúc bằng đuôi đúng định dạng; exp.Run ghi thẳng vào đó.
@@ -116,7 +171,18 @@ func (e *Exporter) Export(ctx context.Context, userID, dir, format string) (path
 	if err := os.Rename(tmpPath, final); err != nil {
 		return "", "", fmt.Errorf("lưu file xuất: %w", err)
 	}
+	removeStaleExports(exportsDir, format, final)
 	return final, downloadName, nil
+}
+
+// removeStaleExports xoá các bản cache cũ cùng định dạng để thư mục không phình ra.
+func removeStaleExports(dir, format, keep string) {
+	old, _ := filepath.Glob(filepath.Join(dir, "*-*."+format))
+	for _, f := range old {
+		if f != keep {
+			_ = os.Remove(f)
+		}
+	}
 }
 
 // exportFileName làm sạch tên sách thành tên file an toàn; rỗng → "truyen".

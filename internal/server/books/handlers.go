@@ -314,6 +314,7 @@ func (s *Service) finishDelete(bookID, userID string) {
 		log.Error("đường dẫn truyện không hợp lệ khi xoá", "err", err)
 		return
 	}
+	s.exporter.WaitDir(dir)
 	if err := os.RemoveAll(dir); err != nil {
 		log.Error("xoá thư mục truyện thất bại", "err", err)
 		return
@@ -456,6 +457,11 @@ func (s *Service) handleSteer(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.writeResult(w, r, b.ID, u.ID, false, ack == nil)
+			return
+		}
+		if errors.Is(err, jobs.ErrNotReady) {
+			httpx.WriteErr(w, r, &httpx.Error{Status: http.StatusServiceUnavailable, Code: "worker_starting",
+				Message: "Truyện đang khởi động, chưa nhận được góp ý. Hãy thử lại sau vài giây.", RetryAfter: 5 * time.Second})
 			return
 		}
 		// Worker vừa thoát: rơi xuống nhánh xếp hàng.

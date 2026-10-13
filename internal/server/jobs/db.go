@@ -85,9 +85,13 @@ type finishResult struct {
 	Snapshot     []byte // nil = giữ snapshot cũ
 	ClearPending bool
 	Failed       bool // tăng resume_failures; false = lượt sạch, đặt lại 0
+	// AfterDrain: worker tự dừng trong lúc server đang tắt (drain đã đặt interrupted);
+	// kết quả vẫn được ghi đè lên interrupted.
+	AfterDrain bool
 }
 
-// finish ghi kết quả. Chỉ áp khi truyện còn running (không đè lên deleting).
+// finish ghi kết quả. Chỉ áp khi truyện còn running (hoặc interrupted nếu AfterDrain);
+// không đè lên deleting.
 func (d jobDB) finish(ctx context.Context, id string, r finishResult) (bool, error) {
 	tag, err := d.pool.Exec(ctx, `
 		UPDATE books SET
@@ -97,8 +101,8 @@ func (d jobDB) finish(ctx context.Context, id string, r finishResult) (bool, err
 			pending_text = CASE WHEN $6 THEN NULL ELSE pending_text END,
 			resume_failures = CASE WHEN $7 THEN resume_failures + 1 ELSE 0 END,
 			finished_at = now(), updated_at = now()
-		WHERE id = $1 AND status = 'running'`,
-		id, string(r.Status), r.StopReason, r.LastError, nullJSON(r.Snapshot), r.ClearPending, r.Failed)
+		WHERE id = $1 AND (status = 'running' OR ($8 AND status = 'interrupted'))`,
+		id, string(r.Status), r.StopReason, r.LastError, nullJSON(r.Snapshot), r.ClearPending, r.Failed, r.AfterDrain)
 	if err != nil {
 		return false, err
 	}
@@ -131,7 +135,7 @@ func (d jobDB) recoverAll(ctx context.Context) error {
 	return pgx.BeginFunc(ctx, d.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
 			UPDATE books SET status = 'failed', updated_at = now(),
-				last_error = 'Truyện bị gián đoạn nhiều lần khi máy chủ gặp sự cố, đã dừng tự khôi phục. Bấm "Thử lại" để chạy tiếp.'
+				last_error = 'Truyện gặp lỗi hoặc bị gián đoạn nhiều lần liên tiếp, đã dừng tự khôi phục. Bấm "Thử lại" để chạy tiếp.'
 			WHERE status = 'running' AND resume_failures + 1 >= $1`, maxCrashRecoveries); err != nil {
 			return err
 		}

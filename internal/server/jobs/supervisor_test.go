@@ -347,11 +347,11 @@ func TestOutcomeMapsExitToStatus(t *testing.T) {
 		{"user", exit(api.ExitStopped, api.StopUser, ""), "", api.StatusPaused, false, false, ""},
 		{"hold", exit(api.ExitStopped, api.StopHold, ""), "", api.StatusPaused, false, false, ""},
 		{"pending_steer", exit(api.ExitStopped, api.StopPendingSteer, ""), "", api.StatusPaused, false, false, ""},
-		{"error_with_message", exit(api.ExitStopped, api.StopError, "lỗi engine"), "", api.StatusFailed, true, false, "lỗi engine"},
-		{"unknown_stop_reason", exit(api.ExitStopped, "khong_ro", ""), "", api.StatusFailed, true, false, "Engine dừng vì lỗi"},
-		{"exit_error", exit(api.ExitError, "", "boom"), "", api.StatusFailed, true, false, "boom"},
+		{"error_with_message", exit(api.ExitStopped, api.StopError, "lỗi engine"), "", api.StatusFailed, true, false, msgRunFailed},
+		{"unknown_stop_reason", exit(api.ExitStopped, "khong_ro", ""), "", api.StatusFailed, true, false, msgRunFailed},
+		{"exit_error", exit(api.ExitError, "", "boom"), "", api.StatusFailed, true, false, msgRunFailed},
 		{"exit_shutdown", exit(api.ExitShutdown, "", ""), "", api.StatusPaused, false, false, ""},
-		{"no_exit_message", nil, "", api.StatusFailed, true, false, "Worker dừng bất thường"},
+		{"no_exit_message", nil, "", api.StatusFailed, true, false, msgWorkerCrashed},
 		{"lock_busy_requeues", exit(api.ExitError, "", "lock_busy"), api.ErrCodeLockBusy, "", false, true, ""},
 	}
 	for _, tc := range cases {
@@ -370,8 +370,11 @@ func TestOutcomeMapsExitToStatus(t *testing.T) {
 				t.Fatalf("outcome = {status:%s failed:%v last_error:%q}, muốn {status:%s failed:%v last_error:%q}",
 					res.Status, res.Failed, res.LastError, tc.status, tc.failed, tc.lastError)
 			}
-			if !res.ClearPending {
-				t.Fatal("ClearPending phải true sau mọi lượt worker kết thúc")
+			if res.ClearPending == tc.failed {
+				t.Fatalf("ClearPending = %v với failed = %v: chỉ lượt sạch mới xoá việc đang chờ", res.ClearPending, tc.failed)
+			}
+			if strings.Contains(res.LastError, "boom") || strings.Contains(res.LastError, "lỗi engine") {
+				t.Fatalf("last_error lộ chi tiết lỗi: %q", res.LastError)
 			}
 		})
 	}
@@ -405,8 +408,11 @@ func TestStopReasonsReachBookStatus(t *testing.T) {
 	}
 
 	b = waitBook(t, pool, broken, api.StatusFailed)
-	if b.StopReason != api.StopError || b.LastError != "lỗi giả lập" || b.ResumeFailures != 1 {
+	if b.StopReason != api.StopError || b.LastError != msgRunFailed || b.ResumeFailures != 1 {
 		t.Fatalf("error: %+v", b)
+	}
+	if b.PendingAction == nil || *b.PendingAction != api.ActionStart || b.PendingText == nil {
+		t.Fatalf("lượt lỗi phải giữ việc đang chờ để thử lại: %+v", b)
 	}
 }
 
@@ -484,8 +490,18 @@ func TestCrashWithoutExitFailsWithStderrTail(t *testing.T) {
 	if b.StopReason != api.StopError || b.ResumeFailures != 1 {
 		t.Fatalf("crash: %+v", b)
 	}
-	if !containsAll(b.LastError, "giả lập sự cố", "panic: fake crash", "goroutine 1") {
-		t.Fatalf("last_error thiếu đuôi stderr: %q", b.LastError)
+	if b.LastError != msgWorkerCrashed {
+		t.Fatalf("last_error phải là thông báo chung, được %q", b.LastError)
+	}
+	if b.PendingAction == nil || *b.PendingAction != api.ActionStart {
+		t.Fatalf("crash trước khi engine chạy phải giữ action start: %+v", b)
+	}
+	// Thử lại: claim phải vẫn trả action start (không rơi về resume trên thư mục rỗng).
+	if _, err := pool.Exec(context.Background(), `UPDATE books SET status = 'queued' WHERE id = $1::uuid`, id); err != nil {
+		t.Fatal(err)
+	}
+	if row, ok, err := sup.db.claim(context.Background(), id); err != nil || !ok || row.Action != api.ActionStart || row.Text != "[fake:crash] sập" {
+		t.Fatalf("claim sau crash = %+v ok=%v err=%v, muốn action start kèm prompt", row, ok, err)
 	}
 	logPath := filepath.Join(mustBookDir(t, sup, uid, id), "logs", "worker-stderr.log")
 	logData, err := os.ReadFile(logPath)
@@ -495,7 +511,7 @@ func TestCrashWithoutExitFailsWithStderrTail(t *testing.T) {
 	if !containsAll(string(logData), "giả lập sự cố", "goroutine 1") {
 		t.Fatalf("worker-stderr.log thiếu nội dung stderr: %q", logData)
 	}
-	if containsAll(b.LastError, testSecret) || containsAll(string(logData), testSecret) {
+	if containsAll(b.LastError, "goroutine", "panic", ".go") || containsAll(b.LastError, testSecret) || containsAll(string(logData), testSecret) {
 		t.Fatal("API key lọt vào last_error hoặc worker-stderr.log")
 	}
 }
@@ -837,5 +853,102 @@ func TestAbortBeforeReadyIsRemembered(t *testing.T) {
 	n, err := pr.Read(buf)
 	if err != nil || !strings.Contains(string(buf[:n]), `"type":"abort"`) {
 		t.Fatalf("worker không nhận được abort: %q err=%v", buf[:n], err)
+	}
+}
+
+// Xoá đúng lúc scheduler giữ chỗ mà claim thất bại: StopAndWait không được treo.
+func TestStopAndWaitDuringFailedClaim(t *testing.T) {
+	pool := dbtest.New(t)
+	uid, kid := newUser(t, pool)
+	id := insertBook(t, pool, uid, kid, bookFix{action: api.ActionStart, text: "[fake:fast] xoá lúc claim"})
+	sup := newSupervisor(t, pool, nil)
+	ctx := context.Background()
+
+	// Giữ khoá dòng để UPDATE của claim phải chờ; queued() là SELECT thường nên không bị chặn.
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE books SET updated_at = now() WHERE id = $1::uuid`, id); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = sup.schedule(ctx) }()
+	waitFor(t, "scheduler giữ chỗ", func() bool { return sup.live(id) != nil })
+
+	stopped := make(chan struct{})
+	go func() {
+		sup.StopAndWait(id)
+		close(stopped)
+	}()
+	// Truyện chuyển sang deleting trước khi claim chạy được: claim sẽ không khớp dòng nào.
+	if _, err := tx.Exec(ctx, `UPDATE books SET status = 'deleting' WHERE id = $1::uuid`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopAndWait treo khi claim thất bại")
+	}
+	if sup.RunningCount() != 0 {
+		t.Fatalf("còn %d proc giữ chỗ", sup.RunningCount())
+	}
+}
+
+// Worker tự dừng (review_wait) trong lúc server đang drain: kết quả vẫn được ghi và
+// pending bị xoá, không để lại interrupted kèm pending_action cũ.
+func TestNaturalStopDuringDrainIsRecorded(t *testing.T) {
+	pool := dbtest.New(t)
+	uid, kid := newUser(t, pool)
+	id := insertBook(t, pool, uid, kid, bookFix{action: api.ActionStart, text: slowPrompt, advance: api.AdvanceReview})
+	sup := newSupervisor(t, pool, nil)
+	start(t, sup)
+	waitReady(t, sup, id)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sup.BeforeShutdown(ctx)
+	if b := mustBook(t, pool, id); b.Status != api.StatusInterrupted {
+		t.Fatalf("sau BeforeShutdown = %s, muốn interrupted", b.Status)
+	}
+	// Không gọi Shutdown: worker tự dừng khi xong chương đầu.
+	b := waitBook(t, pool, id, api.StatusWaitingReview)
+	if b.StopReason != api.StopReviewWait || b.PendingAction != nil || b.ResumeFailures != 0 {
+		t.Fatalf("kết quả tự dừng khi drain: %+v", b)
+	}
+}
+
+// Worker chưa sẵn sàng sau ackTimeout: lệnh chưa được gửi nên phải báo lỗi, không im lặng.
+func TestCommandBeforeReadyReturnsNotReady(t *testing.T) {
+	old := ackTimeout
+	ackTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { ackTimeout = old })
+
+	p := newProc("b", "u", nil)
+	ack, err := p.command(context.Background(), api.WorkerCommand{Type: api.MsgSteer, ID: "1", Text: "x"})
+	if err != ErrNotReady || ack != nil {
+		t.Fatalf("command = (%+v, %v), muốn ErrNotReady", ack, err)
+	}
+}
+
+// stderr của một lượt chạy dài không làm log phình quá giới hạn.
+func TestPumpStderrCapsLogSize(t *testing.T) {
+	dir := t.TempDir()
+	p := newProc("b", "u", nil)
+	line := strings.Repeat("x", 1023) + "\n"
+	p.pumpStderr(strings.NewReader(strings.Repeat(line, 7<<10)), dir) // ~7MB
+
+	fi, err := os.Stat(filepath.Join(dir, "logs", "worker-stderr.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Size() > stderrLogMax+512 {
+		t.Fatalf("log %d byte, vượt giới hạn %d", fi.Size(), stderrLogMax)
+	}
+	if tail := p.stderrTail(); tail == "" {
+		t.Fatal("đuôi stderr trong bộ nhớ vẫn phải được giữ")
 	}
 }

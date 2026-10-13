@@ -157,6 +157,8 @@ func (s *Supervisor) schedule(ctx context.Context) error {
 
 		row, ok, err := s.db.claim(ctx, q.ID)
 		if err != nil || !ok {
+			// Đóng done để StopAndWait đang chờ proc giữ chỗ này không bị treo.
+			p.markDone()
 			s.release(p)
 			if err != nil {
 				return err
@@ -356,7 +358,11 @@ func (s *Supervisor) run(p *proc, row jobRow) {
 	s.mu.Lock()
 	draining := s.draining
 	s.mu.Unlock()
-	if draining {
+	// Worker tự dừng (có exit message không phải do server yêu cầu shutdown) thì kết
+	// quả vẫn hợp lệ dù server đang drain; chỉ lượt bị chính drain cắt ngang mới giữ
+	// interrupted và pending để chạy lại sau khởi động.
+	cutByDrain := p.stopping.Load() || p.exit == nil || p.exit.Reason == api.ExitShutdown
+	if draining && cutByDrain {
 		// drain đã đặt interrupted; chỉ lưu snapshot cuối.
 		if b := marshalSnapshot(p.lastSnap); b != nil {
 			_ = s.db.saveSnapshot(ctx, p.bookID, b)
@@ -364,7 +370,14 @@ func (s *Supervisor) run(p *proc, row jobRow) {
 		return
 	}
 	res, requeue := p.outcome()
+	res.AfterDrain = draining
+	if res.Failed {
+		log.Warn("lượt chạy worker thất bại", p.failureDetail()...)
+	}
 	if requeue {
+		if draining {
+			return
+		}
 		s.mu.Lock()
 		b := s.backoff[p.bookID]
 		delay := lockBusyBackoff[min(b.attempts, len(lockBusyBackoff)-1)]

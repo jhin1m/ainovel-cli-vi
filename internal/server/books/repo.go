@@ -49,6 +49,10 @@ func scanBook(row pgx.Row) (bookRow, error) {
 		return bookRow{}, err
 	}
 	b.Status = api.BookStatus(status)
+	// Với start, pending_text là prompt của truyện chứ không phải góp ý.
+	if b.PendingAction != api.ActionSteer {
+		b.PendingText = ""
+	}
 	if len(snap) > 0 {
 		var s api.BookSnapshot
 		if json.Unmarshal(snap, &s) == nil {

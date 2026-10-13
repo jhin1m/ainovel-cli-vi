@@ -21,7 +21,6 @@ import (
 
 const (
 	helloTimeout     = 10 * time.Second
-	ackTimeout       = 5 * time.Second
 	stopGrace        = 10 * time.Second // shutdown → SIGTERM → SIGKILL, mỗi bước chờ chừng này
 	stdoutBufBytes   = 4 << 20
 	stderrRingLines  = 200
@@ -30,8 +29,14 @@ const (
 	lastErrorMaxSize = 8 << 10
 )
 
+// ackTimeout: thời gian chờ worker sẵn sàng và chờ ack (biến để test rút ngắn).
+var ackTimeout = 5 * time.Second
+
 // ErrNotRunning: truyện không có worker đang sống.
 var ErrNotRunning = errors.New("truyện không có worker đang chạy")
+
+// ErrNotReady: worker đang sống nhưng chưa sẵn sàng nhận lệnh (chưa chào/chưa nhận init).
+var ErrNotReady = errors.New("worker chưa sẵn sàng nhận lệnh")
 
 // proc là một process worker đang sống của một truyện.
 type proc struct {
@@ -105,7 +110,8 @@ func (p *proc) writeLine(v any) error {
 }
 
 // command gửi lệnh và chờ ack tối đa ackTimeout. ack nil = đã gửi nhưng chưa có
-// xác nhận (kết quả sẽ đến qua SSE).
+// xác nhận (kết quả sẽ đến qua SSE). ErrNotReady: worker chưa sẵn sàng sau ackTimeout,
+// lệnh CHƯA được gửi.
 func (p *proc) command(ctx context.Context, cmd api.WorkerCommand) (*api.WorkerMessage, error) {
 	if cmd.Type == api.MsgAbort {
 		select {
@@ -128,7 +134,7 @@ func (p *proc) command(ctx context.Context, cmd api.WorkerCommand) (*api.WorkerM
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(ackTimeout):
-		return nil, nil
+		return nil, ErrNotReady
 	}
 	ch := make(chan api.WorkerMessage, 1)
 	p.amu.Lock()
@@ -203,15 +209,21 @@ func (p *proc) stderrTail() string {
 	return s
 }
 
-// pumpStderr ghi stderr của worker vào logs/worker-stderr.log (cắt khi quá 5MB)
+// pumpStderr ghi stderr của worker vào logs/worker-stderr.log (cắt khi mở nếu quá 5MB,
+// và ngừng ghi khi đạt 5MB trong lúc chạy)
 // và giữ 200 dòng cuối để báo lỗi khi worker chết bất thường.
 func (p *proc) pumpStderr(r io.Reader, bookDir string) {
 	var f *os.File
+	var written int64
 	logPath := filepath.Join(bookDir, "logs", "worker-stderr.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o750); err == nil {
 		flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
-		if fi, err := os.Stat(logPath); err == nil && fi.Size() > stderrLogMax {
-			flags |= os.O_TRUNC
+		if fi, err := os.Stat(logPath); err == nil {
+			if fi.Size() > stderrLogMax {
+				flags |= os.O_TRUNC
+			} else {
+				written = fi.Size()
+			}
 		}
 		f, _ = os.OpenFile(logPath, flags, 0o640)
 	}
@@ -223,8 +235,12 @@ func (p *proc) pumpStderr(r io.Reader, bookDir string) {
 	for sc.Scan() {
 		line := sc.Text()
 		p.pushStderr(line)
-		if f != nil {
-			_, _ = f.WriteString(line + "\n")
+		if f != nil && written < stderrLogMax {
+			n, _ := f.WriteString(line + "\n")
+			written += int64(n)
+			if written >= stderrLogMax {
+				_, _ = f.WriteString("[đã đạt giới hạn kích thước log, bỏ qua phần còn lại của lượt chạy này]\n")
+			}
 		}
 	}
 }
@@ -268,6 +284,7 @@ func (p *proc) handle(msg api.WorkerMessage, saveSnap func(*api.BookSnapshot, bo
 // outcome quy đổi cách worker kết thúc thành trạng thái truyện.
 func (p *proc) outcome() (res finishResult, requeue bool) {
 	res.Snapshot = marshalSnapshot(p.lastSnap)
+	// Pending chỉ bị xoá khi lượt kết thúc sạch: lượt lỗi phải chạy lại đúng việc đang chờ.
 	res.ClearPending = true
 	if p.errCode == api.ErrCodeLockBusy {
 		return finishResult{}, true
@@ -276,10 +293,8 @@ func (p *proc) outcome() (res finishResult, requeue bool) {
 		res.Status = api.StatusFailed
 		res.Failed = true
 		res.StopReason = api.StopError
-		res.LastError = "Worker dừng bất thường"
-		if tail := p.stderrTail(); tail != "" {
-			res.LastError += ":\n" + tail
-		}
+		res.ClearPending = false
+		res.LastError = msgWorkerCrashed
 		return res, false
 	}
 	switch p.exit.Reason {
@@ -291,7 +306,8 @@ func (p *proc) outcome() (res finishResult, requeue bool) {
 		res.Status = api.StatusFailed
 		res.Failed = true
 		res.StopReason = api.StopError
-		res.LastError = firstNonEmpty(p.exit.Error, p.errMsg, "Worker báo lỗi")
+		res.ClearPending = false
+		res.LastError = msgRunFailed
 		return res, false
 	}
 	res.StopReason = p.exit.StopReason
@@ -307,18 +323,25 @@ func (p *proc) outcome() (res finishResult, requeue bool) {
 	default:
 		res.Status = api.StatusFailed
 		res.Failed = true
-		res.LastError = firstNonEmpty(p.exit.Error, p.errMsg, "Engine dừng vì lỗi")
+		res.ClearPending = false
+		res.LastError = msgRunFailed
 	}
 	return res, false
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
+// Thông báo gửi client: chi tiết (stderr, đường dẫn) chỉ nằm trong log server.
+const (
+	msgWorkerCrashed = "Worker dừng bất thường. Hãy bấm \"Thử lại\"; nếu lỗi lặp lại, hãy liên hệ quản trị viên."
+	msgRunFailed     = "Lượt chạy gặp lỗi. Hãy bấm \"Thử lại\"; nếu lỗi lặp lại, hãy liên hệ quản trị viên."
+)
+
+// failureDetail gom chi tiết lỗi của lượt chạy để ghi log server.
+func (p *proc) failureDetail() []any {
+	args := []any{"err_code", p.errCode, "err_msg", p.errMsg, "stderr_tail", p.stderrTail()}
+	if p.exit != nil {
+		args = append(args, "exit_reason", p.exit.Reason, "stop_reason", p.exit.StopReason, "exit_error", p.exit.Error)
 	}
-	return ""
+	return args
 }
 
 // readHello đọc dòng đầu tiên, phải là hello khớp giao thức và phiên bản.

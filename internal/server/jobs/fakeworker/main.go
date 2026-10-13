@@ -379,6 +379,10 @@ func (r *runner) run() outcome {
 		return r.fail(err)
 	}
 	if progress == nil {
+		// Worker thật: resume trên thư mục chưa có tiến độ báo nothing_to_resume.
+		if r.init.Action == api.ActionResume {
+			return outcome{stop: api.StopNothingToResume}
+		}
 		return r.fail(errors.New("truyện chưa được khởi tạo"))
 	}
 	done := progress.Phase == domain.PhaseComplete
