@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from 'react'
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
 
 const base =
-  'inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-control text-[15px] font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+  'inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-control text-base font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
 
 const variants: Record<Variant, string> = {
   primary: 'bg-accent text-on-accent hover:bg-accent-hover',

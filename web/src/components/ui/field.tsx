@@ -1,7 +1,7 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
 
 export const inputClass =
-  'w-full min-h-[44px] box-border px-3 rounded-[10px] border border-line-input bg-surface text-fg text-[16px] font-sans'
+  'w-full min-h-[44px] box-border px-3 rounded-control border border-line-input bg-surface text-fg text-base font-sans'
 
 interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: string
@@ -25,12 +25,12 @@ export function Field({ label, hint, error, className = '', ...rest }: FieldProp
         {...rest}
       />
       {hint && (
-        <span id={`${id}-hint`} className="text-[13px] text-muted">
+        <span id={`${id}-hint`} className="text-sm text-muted">
           {hint}
         </span>
       )}
       {error && (
-        <span id={`${id}-err`} role="alert" className="text-[13px] text-st-error">
+        <span id={`${id}-err`} role="alert" className="text-sm text-st-error">
           {error}
         </span>
       )}

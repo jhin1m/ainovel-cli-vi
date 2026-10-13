@@ -15,6 +15,9 @@ export const BOOK_STATUSES = [
 
 export type KnownBookStatus = (typeof BOOK_STATUSES)[number]
 
+/** Trạng thái server cho phép resume (books/handlers.go handleResume). */
+export const RESUMABLE: ReadonlySet<string> = new Set<KnownBookStatus>(['paused', 'failed', 'interrupted'])
+
 export function isKnownStatus(s: BookStatus): s is KnownBookStatus {
   return (BOOK_STATUSES as readonly string[]).includes(s)
 }

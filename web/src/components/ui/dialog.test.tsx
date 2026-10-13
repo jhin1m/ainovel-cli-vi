@@ -47,4 +47,51 @@ describe('Dialog', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(opener).toHaveFocus()
   })
+
+  it('giữ focus trong hộp thoại khi có phần tử tabindex=-1 (radio roving, đoạn văn được focus)', async () => {
+    const user = userEvent.setup()
+    render(
+      <div>
+        <button>nền</button>
+        <Dialog open title="Hộp" onClose={() => {}}>
+          <button tabIndex={-1}>radio 1</button>
+          <button>radio 2</button>
+          <p tabIndex={-1}>đã lưu</p>
+          <button>xong</button>
+        </Dialog>
+      </div>,
+    )
+    screen.getByRole('button', { name: 'radio 2' }).focus()
+    await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'xong' })).toHaveFocus()
+
+    screen.getByText('đã lưu').focus()
+    await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'xong' })).toHaveFocus()
+    screen.getByText('đã lưu').focus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'radio 2' })).toHaveFocus()
+  })
+
+  it('mặc định cỡ md, nhận size lg/xl', () => {
+    const { rerender } = render(
+      <Dialog open title="Hộp" onClose={() => {}}>
+        x
+      </Dialog>,
+    )
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-md', 'rounded-t-card')
+    rerender(
+      <Dialog open size="lg" title="Hộp" onClose={() => {}}>
+        x
+      </Dialog>,
+    )
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-2xl')
+    expect(screen.getByRole('dialog')).not.toHaveClass('max-w-md')
+    rerender(
+      <Dialog open size="xl" title="Hộp" onClose={() => {}}>
+        x
+      </Dialog>,
+    )
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-4xl')
+  })
 })

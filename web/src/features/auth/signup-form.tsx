@@ -6,11 +6,11 @@ import { Button, buttonClass } from '@/components/ui/button'
 import { Field, FormError } from '@/components/ui/field'
 import { msg } from '@/lib/messages'
 
-type Errors = Partial<Record<'email' | 'password' | 'displayName' | 'inviteCode', string>>
+type Errors = Partial<Record<'email' | 'password' | 'displayName', string>>
 
 export function SignupForm({ onSuccess }: { onSuccess: () => void }) {
   const signup = useSignup()
-  const [form, setForm] = useState({ email: '', password: '', displayName: '', inviteCode: '' })
+  const [form, setForm] = useState({ email: '', password: '', displayName: '' })
   const [errors, setErrors] = useState<Errors>({})
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -21,7 +21,6 @@ export function SignupForm({ onSuccess }: { onSuccess: () => void }) {
     if (form.email.trim() === '') next.email = msg.auth.emailRequired
     if ([...form.password].length < 10) next.password = msg.auth.passwordTooShort
     if (form.displayName.trim() === '') next.displayName = msg.auth.displayNameRequired
-    if (form.inviteCode.trim() === '') next.inviteCode = msg.auth.inviteRequired
     setErrors(next)
     if (Object.keys(next).length > 0) return
     signup.mutate(
@@ -29,7 +28,6 @@ export function SignupForm({ onSuccess }: { onSuccess: () => void }) {
         email: form.email.trim(),
         password: form.password,
         display_name: form.displayName.trim(),
-        invite_code: form.inviteCode.trim(),
       },
       { onSuccess },
     )
@@ -61,14 +59,6 @@ export function SignupForm({ onSuccess }: { onSuccess: () => void }) {
         onChange={set('password')}
         hint={msg.auth.passwordHint}
         error={errors.password}
-      />
-      <Field
-        label={msg.auth.inviteCode}
-        autoComplete="off"
-        autoCapitalize="off"
-        value={form.inviteCode}
-        onChange={set('inviteCode')}
-        error={errors.inviteCode}
       />
       {signup.isError && <FormError>{errorMessage(signup.error)}</FormError>}
       <Button type="submit" disabled={signup.isPending} className="min-h-[52px]">

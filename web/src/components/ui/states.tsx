@@ -28,7 +28,7 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-card border border-line bg-surface p-6 text-center"
+      className="flex flex-col items-center gap-3 rounded-card border border-line-card bg-surface p-6 text-center shadow-card"
     >
       <p className="m-0 font-semibold text-st-error">{title}</p>
       {detail && <p className="m-0 text-sm text-muted">{detail}</p>}

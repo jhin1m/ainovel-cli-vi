@@ -1,37 +1,65 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { errorMessage } from '@/api/client'
-import { useCreateBook, useKeys, useProviders } from '@/api/queries'
-import type { Book } from '@/api/types.gen'
-import { buttonClass } from '@/components/ui/button'
-import { FormError, inputClass } from '@/components/ui/field'
-import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
-import { formatPer1M } from '@/lib/format'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { ApiError, errorMessage } from '@/api/client'
+import { useBooks, useCreateBook, useKeys, useProviders } from '@/api/queries'
+import type { APIKey, Book } from '@/api/types.gen'
+import { FormError } from '@/components/ui/field'
+import { ErrorState, LoadingState } from '@/components/ui/states'
 import { msg } from '@/lib/messages'
+import { ConfigPanel } from './config-panel'
 import {
   DEFAULT_BUDGET_USD,
-  MAX_PROMPT_RUNES,
-  clampPrompt,
+  EMPTY_PROMPT_OPTIONS,
+  composePrompt,
   modelsForKey,
-  MAX_BUDGET_USD,
   parseBudget,
-  runeLength,
+  pickDefaultModel,
   validateNewBook,
   type NewBookErrors,
+  type PromptOptions,
 } from './new-book-logic'
+import { PromptSection } from './prompt-section'
 
-export function NewBookForm({ onCreated }: { onCreated: (b: Book) => void }) {
+/**
+ * Trang tạo truyện: cột trái là ý tưởng (PromptSection), cột phải là thẻ cấu hình
+ * sticky (ConfigPanel). Chưa có key thì thêm ngay trong thẻ cấu hình, không rời trang.
+ *
+ * Thẻ cấu hình chứa `AddKeyForm` (một <form> riêng) nên nằm ngoài <form> tạo truyện:
+ * <form> lồng nhau là HTML sai và submit của form con nổi bọt lên form cha. Các ô của
+ * thẻ cấu hình nối vào form qua thuộc tính `form={formId}`.
+ */
+interface Props {
+  onCreated: (b: Book) => void
+  /** Ý tưởng điền sẵn (vd. từ truyện bị provider từ chối). */
+  initialIdea?: string
+  /** Chưa chọn tay thì ưu tiên key của provider khác provider này (provider vừa từ chối). */
+  avoidProvider?: string
+}
+
+export function NewBookForm({ onCreated, initialIdea = '', avoidProvider }: Props) {
   const keys = useKeys()
   const providers = useProviders()
+  // Chỉ dùng để ước tính số chương; đang tải hoặc lỗi thì không hiện ước tính.
+  const books = useBooks()
   const create = useCreateBook()
+  const formId = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
 
-  const [prompt, setPrompt] = useState('')
+  const [idea, setIdea] = useState(initialIdea)
+  const [options, setOptions] = useState<PromptOptions>(EMPTY_PROMPT_OPTIONS)
   const [keyId, setKeyId] = useState('')
   const [modelId, setModelId] = useState('')
   const [budget, setBudget] = useState(String(DEFAULT_BUDGET_USD))
   const [review, setReview] = useState(true)
   const [errors, setErrors] = useState<NewBookErrors>({})
+  const [attempt, setAttempt] = useState(0)
+  const [adding, setAdding] = useState(false)
+  const [addRound, setAddRound] = useState(0)
+
+  // Sau mỗi lần bấm gửi bị lỗi, đưa focus tới ô lỗi đầu tiên.
+  useEffect(() => {
+    if (attempt > 0) rootRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+  }, [attempt])
 
   if (keys.isPending || providers.isPending) return <LoadingState />
   if (keys.isError) {
@@ -46,203 +74,106 @@ export function NewBookForm({ onCreated }: { onCreated: (b: Book) => void }) {
       />
     )
   }
-  if (keys.data.length === 0) {
-    return (
-      <EmptyState
-        title={msg.newBook.noKeyTitle}
-        hint={msg.newBook.noKeyBody}
-        action={
-          <Link to="/settings/keys" className={buttonClass('primary', 'text-on-accent no-underline hover:text-on-accent')}>
-            {msg.newBook.noKeyAction}
-          </Link>
-        }
-      />
-    )
-  }
 
-  const providerLabel = (name: string) => providers.data.find((p) => p.name === name)?.label ?? name
-  const key = keys.data.find((k) => k.id === keyId) ?? keys.data[0]
+  const key =
+    keys.data.find((k) => k.id === keyId) ?? keys.data.find((k) => k.provider !== avoidProvider) ?? keys.data[0]
+  const provider = providers.data.find((p) => p.name === key?.provider)
+  const subscription = Boolean(provider?.subscription)
   const models = modelsForKey(key, providers.data)
-  const model = models.find((m) => m.id === modelId) ?? models[0]
+  // Chưa chọn tay (hoặc vừa đổi key) thì dùng model đề xuất của provider.
+  const model = models.find((m) => m.id === modelId) ?? pickDefaultModel(models)
+  const composed = composePrompt(idea, options)
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    const input = { prompt, keyId: key?.id ?? '', model: model?.id ?? '', budget }
-    const errs = validateNewBook(input)
+    const input = { prompt: composed, keyId: key?.id ?? '', model: model?.id ?? '', budget }
+    const errs = validateNewBook(input, { subscription })
     setErrors(errs)
-    if (Object.keys(errs).length > 0) return
+    if (Object.keys(errs).length > 0) {
+      setAttempt((n) => n + 1)
+      return
+    }
     create.mutate(
       {
-        prompt: prompt.trim(),
+        prompt: composed,
         api_key_id: input.keyId,
         model: input.model,
-        budget_usd: parseBudget(budget),
+        // Gói thuê bao không có ngân sách USD; server cũng bỏ qua và lưu 0.
+        budget_usd: subscription ? 0 : parseBudget(budget),
         advance_mode: review ? 'review' : 'auto',
       },
       { onSuccess: onCreated },
     )
   }
 
+  function keySaved(k: APIKey) {
+    setKeyId(k.id)
+    setModelId('')
+    // Giữ khối kết quả của AddKeyForm (kết quả tự kiểm) cạnh ô chọn key tới khi bấm "Xong".
+    setAdding(true)
+  }
+
+  function addOpen(open: boolean) {
+    setAdding(open)
+    if (!open) setAddRound((n) => n + 1)
+  }
+
+  const errCode = create.error instanceof ApiError ? create.error.code : ''
+  const serverError = create.isError ? (
+    <FormError>
+      {errCode === 'disk_full' ? msg.newBook.diskFull : errorMessage(create.error)}
+      {errCode === 'book_limit' && (
+        <>
+          {' '}
+          <Link to="/" className="font-medium">
+            {msg.newBook.bookLimitLink}
+          </Link>
+        </>
+      )}
+    </FormError>
+  ) : undefined
+
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-5 px-5 pt-2 pb-7">
-      <div className="flex flex-col gap-2.5">
-        <label htmlFor="prompt" className="font-serif text-[28px] leading-tight font-semibold tracking-tight">
-          {msg.newBook.heading}
-        </label>
-        <textarea
-          id="prompt"
-          rows={5}
-          value={prompt}
-          onChange={(e) => setPrompt(clampPrompt(e.target.value))}
-          placeholder={msg.newBook.placeholder}
-          aria-invalid={errors.prompt ? true : undefined}
-          aria-describedby="prompt-hint"
-          className="box-border w-full rounded-[14px] border border-line-input bg-surface px-4 py-3.5 font-serif text-[17px] leading-relaxed text-fg"
+    <div
+      ref={rootRef}
+      className="flex flex-col gap-6 px-5 pt-2 pb-7 md:px-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:items-start lg:gap-8"
+    >
+      <form id={formId} onSubmit={submit} noValidate className="min-w-0">
+        <PromptSection
+          idea={idea}
+          onIdea={setIdea}
+          options={options}
+          onOptions={setOptions}
+          composed={composed}
+          error={errors.prompt}
         />
-        <div id="prompt-hint" className="flex justify-between gap-3 text-[13px] text-muted">
-          <span>{msg.newBook.hint}</span>
-          <span className="shrink-0">
-            {runeLength(prompt)}/{MAX_PROMPT_RUNES}
-          </span>
-        </div>
-        {errors.prompt && (
-          <span role="alert" className="text-[13px] text-st-error">
-            {errors.prompt}
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2.5">
-        <span className="text-[13px] font-semibold tracking-wider text-muted uppercase">
-          {msg.newBook.ideasTitle}
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {msg.newBook.ideas.map((i) => (
-            <button
-              key={i.label}
-              type="button"
-              onClick={() => setPrompt(i.text)}
-              className="min-h-11 cursor-pointer rounded-full border border-line bg-surface px-3.5 text-sm text-fg"
-            >
-              {i.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <fieldset className="m-0 flex flex-col gap-3.5 rounded-[14px] border border-line bg-surface p-4">
-        <legend className="px-1.5 text-[13px] font-semibold tracking-wider text-muted uppercase">
-          {msg.newBook.modelSection}
-        </legend>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="key" className="text-sm font-medium">
-            {msg.newBook.apiKey}
-          </label>
-          <select
-            id="key"
-            className={inputClass}
-            value={key?.id ?? ''}
-            onChange={(e) => {
-              setKeyId(e.target.value)
-              setModelId('')
-            }}
-          >
-            {keys.data.map((k) => (
-              <option key={k.id} value={k.id}>
-                {[providerLabel(k.provider), k.label].filter(Boolean).join(' · ')} · ••••{k.last4}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="model" className="text-sm font-medium">
-            {msg.newBook.model}
-          </label>
-          <select
-            id="model"
-            className={inputClass}
-            value={model?.id ?? ''}
-            onChange={(e) => setModelId(e.target.value)}
-            disabled={models.length === 0}
-            aria-invalid={errors.model ? true : undefined}
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          {models.length === 0 ? (
-            <span role="alert" className="text-[13px] text-st-error">
-              {msg.newBook.noModels}
-            </span>
-          ) : model ? (
-            <span className="text-[13px] text-muted">
-              {msg.newBook.pricing(formatPer1M(model.input_cost_per_1m), formatPer1M(model.output_cost_per_1m))}
-            </span>
-          ) : null}
-        </div>
-      </fieldset>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="budget" className="text-sm font-medium">
-          {msg.newBook.budget}
-        </label>
-        <div className="flex items-center gap-2.5">
-          <input
-            id="budget"
-            type="number"
-            inputMode="decimal"
-            min={1}
-            max={MAX_BUDGET_USD}
-            step="any"
-            value={budget}
-            onChange={(e) => setBudget(e.target.value)}
-            aria-invalid={errors.budget ? true : undefined}
-            className={`${inputClass} !w-30`}
-          />
-          <span className="text-[15px] text-muted">US$</span>
-        </div>
-        <span className="text-[13px] text-muted">{msg.newBook.budgetHint}</span>
-        {errors.budget && (
-          <span role="alert" className="text-[13px] text-st-error">
-            {errors.budget}
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-start justify-between gap-4 rounded-[14px] border border-line bg-surface p-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="review" className="text-[15px] font-semibold">
-            {msg.newBook.review}
-          </label>
-          <span className="text-[13px] leading-normal text-muted">{msg.newBook.reviewHint}</span>
-        </div>
-        <button
-          id="review"
-          type="button"
-          role="switch"
-          aria-checked={review}
-          onClick={() => setReview((v) => !v)}
-          className={`flex h-8 w-[52px] shrink-0 cursor-pointer items-center rounded-2xl border-0 p-[3px] ${
-            review ? 'justify-end bg-accent' : 'justify-start bg-switch-off'
-          }`}
-        >
-          <span className="size-[26px] rounded-full bg-white shadow-sm" />
-        </button>
-      </div>
-
-      {create.isError && <FormError>{errorMessage(create.error)}</FormError>}
-
-      <button
-        type="submit"
-        disabled={create.isPending}
-        className={buttonClass('primary', 'min-h-[52px] !rounded-[14px] text-base')}
-      >
-        {create.isPending ? msg.newBook.submitting : msg.newBook.submit}
-        <ArrowRight aria-hidden size={20} />
-      </button>
-      <p className="-mt-2 mb-0 text-center text-[13px] text-muted">{msg.newBook.submitHint}</p>
-    </form>
+      </form>
+      <ConfigPanel
+        formId={formId}
+        keys={keys.data}
+        providers={providers.data}
+        books={books.data}
+        apiKey={key}
+        provider={provider}
+        models={models}
+        model={model}
+        budget={budget}
+        review={review}
+        errors={errors}
+        adding={adding}
+        addRound={addRound}
+        pending={create.isPending}
+        serverError={serverError}
+        onKey={(id) => {
+          setKeyId(id)
+          setModelId('')
+        }}
+        onModel={setModelId}
+        onBudget={setBudget}
+        onReview={setReview}
+        onAddOpen={addOpen}
+        onKeySaved={keySaved}
+      />
+    </div>
   )
 }

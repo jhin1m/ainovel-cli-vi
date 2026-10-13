@@ -48,8 +48,25 @@
   --reader-dark-bg: #121417;
   --reader-dark-fg: #dadde2;
 
+  /* Màu phụ ấm (nhãn phụ, điểm nhấn không phải hành động). Tương phản ≥ 4.5:1 trên nền ấm và --bg. */
+  --ink-warm: #9a5b1e;
+  --ink-warm-bg: #f7eee3;
+
+  /* Bìa truyện: 6 tông trầm (teal, chàm, gạch, rêu, mận, đất), chữ trắng đặt lên được. */
+  --cover-1: #2f6f68;
+  --cover-2: #3d4f8a;
+  --cover-3: #9a4a3a;
+  --cover-4: #5d6b3a;
+  --cover-5: #6e3f62;
+  --cover-6: #7a5a3c;
+
+  /* Thẻ: light dùng bóng, không viền; dark tắt bóng, giữ viền. */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px rgb(0 0 0 / 0.04);
+  --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
+  --border-card: transparent;
+
   --radius-card: 16px;
-  --radius-control: 12px;
+  --radius-control: 10px;
   --radius-pill: 999px;
   --touch: 44px;
 }
@@ -90,5 +107,20 @@
     --ag-architect-bg: #3a2616;
     --ag-user-bg: #e6e8eb;
     --ag-user: #15171a;
+
+    --ink-warm: #e3a96b;
+    --ink-warm-bg: #2e2216;
+
+    --cover-1: #24524d;
+    --cover-2: #33406e;
+    --cover-3: #7a3c30;
+    --cover-4: #4b5630;
+    --cover-5: #573250;
+    --cover-6: #5f4630;
+
+    /* Bóng trong suốt thay cho `none` để danh sách box-shadow của Tailwind vẫn hợp lệ. */
+    --shadow-card: 0 0 #0000;
+    --shadow-card-hover: 0 0 #0000;
+    --border-card: var(--border);
   }
 }

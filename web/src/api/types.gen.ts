@@ -20,7 +20,6 @@ export interface SignupRequest {
   email: string;
   password: string;
   display_name: string;
-  invite_code: string;
 }
 /**
  * LoginRequest: POST /api/auth/login.
@@ -47,13 +46,65 @@ export interface APIKey {
   created_at: string;
 }
 /**
- * CreateAPIKeyRequest: POST /api/keys. Phải nhập lại mật khẩu.
+ * CreateAPIKeyRequest: POST /api/keys.
  */
 export interface CreateAPIKeyRequest {
   provider: string;
   label: string;
   api_key: string;
-  current_password: string;
+}
+/**
+ * TestKeyRequest: POST /api/keys/test. Chỉ kiểm key đã lưu của chính user,
+ * không nhận key thô.
+ */
+export interface TestKeyRequest {
+  key_id: string;
+}
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckOK = "ok";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckAuthFailed = "auth_failed";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckPlanMismatch = "plan_mismatch";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckRateLimited = "rate_limited";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckQuota = "quota";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckNetwork = "network";
+/**
+ * Nhóm kết quả kiểm key (TestKeyResult.Kind). Các nhóm lỗi trùng tên với nhóm
+ * lỗi provider của worker.
+ */
+export const KeyCheckUnknown = "unknown";
+/**
+ * TestKeyResult là kết quả kiểm key. Message do server viết theo Kind, không bao
+ * giờ chép văn bản lỗi của provider. Code là mã gốc, chỉ có khi nằm trong allowlist.
+ */
+export interface TestKeyResult {
+  ok: boolean;
+  kind: string;
+  code?: string;
+  message: string;
+  model: string;
 }
 /**
  * ProviderInfo: một provider được phép và các model có giá (GET /api/providers).
@@ -61,6 +112,10 @@ export interface CreateAPIKeyRequest {
 export interface ProviderInfo {
   name: string;
   label: string;
+  /**
+   * Subscription: gói thuê bao, không có ngân sách USD; chỉ hiện token đã dùng.
+   */
+  subscription: boolean;
   models: ModelOption[];
 }
 /**
@@ -72,6 +127,7 @@ export interface ModelOption {
   context_window: number /* int */;
   input_cost_per_1m: number /* float64 */;
   output_cost_per_1m: number /* float64 */;
+  recommended: boolean; // tối đa một model mỗi provider
 }
 /**
  * ErrorResponse là định dạng lỗi chung của mọi API.
@@ -157,6 +213,11 @@ export interface Book {
   model: string;
   api_key_id: string; // rỗng nếu key đã bị xoá
   budget_usd: number /* float64 */;
+  /**
+   * Subscription: provider là gói thuê bao (suy ra từ provider, không lưu DB);
+   * budget_usd luôn 0 và chi phí USD không áp dụng.
+   */
+  subscription: boolean;
   advance_mode: string;
   pending_text: string; // can thiệp đang chờ lượt chạy kế tiếp
   last_error: string;
@@ -420,6 +481,11 @@ export const StopPendingSteer = "pending_steer"; // còn can thiệp chưa xử 
  */
 export const StopError = "error";
 /**
+ * StopProviderRejected: provider từ chối hẳn (sai gói, hết quota). Server ghi
+ * lời giải thích của worker vào last_error thay cho message chung.
+ */
+export const StopProviderRejected = "provider_rejected";
+/**
  * Mã lỗi trong message error của worker.
  */
 export const ErrCodeProtocol = "protocol";
@@ -447,6 +513,11 @@ export const ErrCodeEngine = "engine";
  * Mã lỗi trong message error của worker.
  */
 export const ErrCodeBusy = "busy";
+/**
+ * ErrCodeProviderRejected: message là lời giải thích tiếng Việt dựng từ bảng cố
+ * định của worker (có mã gốc, không chứa body của provider), gửi thẳng cho user.
+ */
+export const ErrCodeProviderRejected = "provider_rejected";
 /**
  * AdvanceMode của truyện: auto chạy liên tục, review dừng sau mỗi chương chờ duyệt.
  */

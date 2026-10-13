@@ -15,10 +15,10 @@ export function AuthLayout({
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-5 py-8">
       <div className="flex items-center gap-2.5">
         <BookOpen aria-hidden className="text-accent" size={28} strokeWidth={1.8} />
-        <span className="text-[19px] font-bold tracking-tight">{msg.appName}</span>
+        <span className="text-lg font-bold tracking-tight">{msg.appName}</span>
       </div>
       <div>
-        <h1 className="m-0 font-serif text-[32px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="m-0 font-serif text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
         <p className="mt-1.5 mb-0 text-sm text-muted">{subtitle}</p>
       </div>
       {children}

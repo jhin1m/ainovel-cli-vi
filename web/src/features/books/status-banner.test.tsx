@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
-import type { Book, BookSnapshot } from '@/api/types.gen'
-import { renderWithProviders } from '@/test/render'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { APIKey, Book, BookSnapshot } from '@/api/types.gen'
+import { jsonResponse, renderWithProviders } from '@/test/render'
 import { StatusBanner, truncate } from './status-banner'
 
 const book = (over: Partial<Book>, snap: Partial<BookSnapshot> = {}): Book =>
@@ -16,7 +16,7 @@ const book = (over: Partial<Book>, snap: Partial<BookSnapshot> = {}): Book =>
   }) as Book
 
 function show(b: Book) {
-  const h = { onNext: vi.fn(), onResume: vi.fn(), onRaiseBudget: vi.fn() }
+  const h = { onNext: vi.fn(), onResume: vi.fn(), onRaiseBudget: vi.fn(), onNotice: vi.fn() }
   return renderWithProviders(<StatusBanner book={b} {...h} />).then(() => h)
 }
 
@@ -58,6 +58,74 @@ describe('StatusBanner', () => {
   it('renders nothing while running', async () => {
     await show(book({ status: 'running' }))
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  describe('đổi key', () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      fetchMock.mockReset()
+    })
+    const k2: APIKey = { id: 'k2', provider: 'zai', label: 'Dự phòng', last4: 'cd34', created_at: '' }
+    function serve(keys: APIKey[]) {
+      vi.stubGlobal('fetch', fetchMock)
+      fetchMock.mockImplementation(async (input, init) => {
+        const url = String(input)
+        if (url === '/api/keys') return jsonResponse(keys)
+        if (url === '/api/providers') return jsonResponse([{ name: 'zai', label: 'Z.ai', subscription: false, models: [] }])
+        if (url === '/api/books/b1' && init?.method === 'PATCH') {
+          return jsonResponse(book({ status: 'failed', provider: 'zai', api_key_id: 'k2' }))
+        }
+        return jsonResponse({ error: { code: 'nf', message: 'không có' } }, 404)
+      })
+    }
+
+    it('key bị xoá: banner có ô chọn key cùng provider và gửi PATCH', async () => {
+      serve([k2, { ...k2, id: 'k9', provider: 'openrouter' }])
+      const h = await show(book({ status: 'paused', provider: 'zai', api_key_id: '' }))
+      const banner = screen.getByRole('region', { name: 'Key của truyện đã bị xoá' })
+      const select = await within(banner).findByRole('combobox', { name: 'Chọn key khác' })
+      expect(within(select).getAllByRole('option')).toHaveLength(1)
+      await userEvent.click(within(banner).getByRole('button', { name: 'Dùng key này' }))
+      await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith('Đã đổi key.', 'failed'))
+      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+      expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ api_key_id: 'k2' })
+    })
+
+    it('truyện hoàn thành thì không đòi key', async () => {
+      await show(book({ status: 'completed', api_key_id: '' }))
+      expect(screen.queryByRole('region', { name: 'Key của truyện đã bị xoá' })).toBeNull()
+    })
+
+    it('provider từ chối: nêu nguyên nhân, dẫn tới tạo truyện mới; chọn key cùng provider là phụ', async () => {
+      serve([k2])
+      await show(
+        book({
+          status: 'failed',
+          stop_reason: 'provider_rejected',
+          provider: 'zai',
+          api_key_id: 'k1',
+          last_error: 'Z.ai từ chối yêu cầu (mã 1113): key không thuộc gói Coding Plan.',
+        }),
+      )
+      const banner = screen.getByRole('region', { name: 'Nhà cung cấp từ chối key' })
+      expect(within(banner).getByText(/mã 1113/)).toBeInTheDocument()
+      expect(within(banner).getByRole('link', { name: 'Tạo truyện mới với provider khác' })).toHaveAttribute(
+        'href',
+        '/books/new?from=b1',
+      )
+      expect(within(banner).queryByRole('button', { name: 'Thử lại' })).toBeNull()
+      const toggle = within(banner).getByRole('button', { name: 'Chọn key khác cùng nhà cung cấp' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await userEvent.click(toggle)
+      expect(await within(banner).findByRole('combobox', { name: 'Chọn key khác' })).toBeInTheDocument()
+    })
+
+    it('lỗi thường (không phải provider_rejected) vẫn là banner lỗi có Thử lại', async () => {
+      await show(book({ status: 'failed', stop_reason: 'error', api_key_id: 'k1', last_error: 'mã 1113 trong chuỗi' }))
+      expect(screen.getByText('Truyện gặp lỗi')).toBeInTheDocument()
+      expect(screen.queryByText('Nhà cung cấp từ chối key')).toBeNull()
+    })
   })
 
   it('truncate keeps short text', () => {

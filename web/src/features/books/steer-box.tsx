@@ -1,13 +1,24 @@
+import { MessageSquarePlus } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { errorMessage } from '@/api/client'
 import { useSteer } from '@/api/queries'
+import type { Book } from '@/api/types.gen'
 import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import { inputClass } from '@/components/ui/field'
 import { msg } from '@/lib/messages'
 
 const MAX_STEER_CHARS = 2000
 
-export function SteerBox({ bookId, pending, disabled }: { bookId: string; pending: string; disabled?: boolean }) {
+interface Props {
+  bookId: string
+  pending: string
+  disabled?: boolean
+  /** `inline`: thẻ riêng trong trang (màn rộng). `sheet`: nằm trong hộp thoại góp ý ở mobile, không viền. */
+  variant?: 'inline' | 'sheet'
+}
+
+export function SteerBox({ bookId, pending, disabled, variant = 'inline' }: Props) {
   const steer = useSteer(bookId)
   const [text, setText] = useState('')
   const [notice, setNotice] = useState('')
@@ -30,17 +41,19 @@ export function SteerBox({ bookId, pending, disabled }: { bookId: string; pendin
     <form
       onSubmit={submit}
       aria-label={msg.book.steer.title}
-      className="pb-safe sticky bottom-0 z-10 flex flex-col gap-2 border-t border-line bg-surface px-4 pt-3 lg:rounded-card lg:border"
+      className={`flex flex-col gap-2 ${
+        variant === 'inline' ? 'rounded-card border border-line-card bg-surface p-4 shadow-card' : ''
+      }`}
     >
       {pending && (
-        <p className="m-0 text-[13px] text-muted">
+        <p className="m-0 text-sm text-muted">
           <span className="font-semibold">{msg.book.steer.pending}:</span> {pending}
         </p>
       )}
       <div className="flex items-end gap-2">
         <textarea
           aria-label={msg.book.steer.title}
-          rows={1}
+          rows={variant === 'sheet' ? 3 : 1}
           value={text}
           disabled={disabled}
           placeholder={msg.book.steer.placeholder}
@@ -51,10 +64,37 @@ export function SteerBox({ bookId, pending, disabled }: { bookId: string; pendin
           {steer.isPending ? msg.book.steer.sending : msg.book.steer.submit}
         </Button>
       </div>
-      {tooLong && <p role="alert" className="m-0 text-[13px] text-st-error">{msg.book.steer.tooLong}</p>}
-      {steer.isError && <p role="alert" className="m-0 text-[13px] text-st-error">{errorMessage(steer.error)}</p>}
-      {notice && !steer.isError && <p role="status" className="m-0 text-[13px] text-muted">{notice}</p>}
-      <p className="m-0 pb-1 text-[12px] text-muted">{msg.book.steer.hint}</p>
+      {tooLong && <p role="alert" className="m-0 text-sm text-st-error">{msg.book.steer.tooLong}</p>}
+      {steer.isError && <p role="alert" className="m-0 text-sm text-st-error">{errorMessage(steer.error)}</p>}
+      {notice && !steer.isError && <p role="status" className="m-0 text-sm text-muted">{notice}</p>}
+      <p className="m-0 text-xs text-muted">{msg.book.steer.hint}</p>
     </form>
+  )
+}
+
+/** Điện thoại (<768px): nút "Góp ý" nổi ở góc dưới, mở sheet chứa ô góp ý. Ẩn từ md. */
+export function SteerFab({ book }: { book: Book }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={book.pending_text ? `${msg.book.steer.open} (${msg.book.steer.hasPending})` : undefined}
+        className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full border-0 bg-accent px-5 text-base font-semibold text-on-accent shadow-lg hover:bg-accent-hover md:hidden"
+      >
+        <MessageSquarePlus aria-hidden size={20} />
+        {msg.book.steer.open}
+        {book.pending_text && <span aria-hidden className="size-2 rounded-full bg-warm-bg" />}
+      </button>
+      <Dialog open={open} title={msg.book.steer.title} onClose={() => setOpen(false)}>
+        <div className="flex flex-col gap-3">
+          <SteerBox bookId={book.id} pending={book.pending_text} disabled={book.status === 'deleting'} variant="sheet" />
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            {msg.book.steer.close}
+          </Button>
+        </div>
+      </Dialog>
+    </>
   )
 }

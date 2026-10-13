@@ -18,15 +18,15 @@ export function EventRow({ event }: { event: Event }) {
     <div className="flex gap-3 border-b border-line px-1 py-2.5" style={{ paddingLeft: `${Math.min(event.depth, 3) * 12 + 4}px` }}>
       <span className={`mt-0.5 h-6 shrink-0 rounded-full px-2.5 text-xs leading-6 font-semibold ${a.tone}`}>{a.label}</span>
       <div className="min-w-0 flex-1">
-        <p className={`m-0 text-[14px] leading-snug break-words ${event.failed ? 'text-st-error' : ''}`}>
+        <p className={`m-0 text-sm leading-snug break-words ${event.failed ? 'text-st-error' : ''}`}>
           {event.summary}
           {event.failed && <span className="sr-only"> ({msg.book.writing.failedStep})</span>}
         </p>
-        {m && <span className="text-[12px] text-muted">{m}</span>}
+        {m && <span className="text-xs text-muted">{m}</span>}
         {event.detail && (
           <details className="mt-1">
-            <summary className="cursor-pointer text-[12px] text-muted">{msg.book.writing.detail}</summary>
-            <pre className="m-0 mt-1 max-h-48 overflow-auto text-[12px] break-words whitespace-pre-wrap text-muted">{event.detail}</pre>
+            <summary className="cursor-pointer text-xs text-muted">{msg.book.writing.detail}</summary>
+            <pre className="m-0 mt-1 max-h-48 overflow-auto text-xs break-words whitespace-pre-wrap text-muted">{event.detail}</pre>
           </details>
         )}
       </div>
@@ -35,8 +35,17 @@ export function EventRow({ event }: { event: Event }) {
   )
 }
 
-/** Danh sách hoạt động ảo hoá, tự cuộn xuống đáy khi đang ở đáy. */
-export function Timeline({ events }: { events: readonly Event[] }) {
+/**
+ * Danh sách hoạt động ảo hoá, tự cuộn xuống đáy khi đang ở đáy.
+ * Ảo hoá cần khung cuộn riêng; `className` đặt chiều cao khung (mặc định 60dvh).
+ */
+export function Timeline({
+  events,
+  className = 'h-[60dvh] min-h-[280px]',
+}: {
+  events: readonly Event[]
+  className?: string
+}) {
   const parentRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
   const stick = useRef(true)
@@ -67,7 +76,7 @@ export function Timeline({ events }: { events: readonly Event[] }) {
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${className}`}>
       <div
         ref={parentRef}
         role="log"
@@ -78,7 +87,7 @@ export function Timeline({ events }: { events: readonly Event[] }) {
           stick.current = bottom
           setAtBottom(bottom)
         }}
-        className="h-[48dvh] min-h-[280px] overflow-y-auto lg:h-[56dvh]"
+        className="h-full overflow-y-auto"
       >
         <div className="relative w-full" style={{ height: virt.getTotalSize() }}>
           {virt.getVirtualItems().map((v) => {

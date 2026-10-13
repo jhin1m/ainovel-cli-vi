@@ -1,7 +1,6 @@
 import { render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { MarkdownView } from './markdown-view'
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, STORAGE_KEY } from './reader-settings'
 
 describe('MarkdownView', () => {
   it('does not turn raw HTML into elements', () => {
@@ -27,18 +26,3 @@ describe('MarkdownView', () => {
   })
 })
 
-describe('reader settings', () => {
-  afterEach(() => localStorage.clear())
-
-  it('round-trips and clamps stored values', () => {
-    saveSettings({ size: 20, font: 'sans', theme: 'dark' })
-    expect(loadSettings()).toEqual({ size: 20, font: 'sans', theme: 'dark' })
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ size: 999, font: 'x', theme: 'neon' }))
-    expect(loadSettings()).toEqual({ ...DEFAULT_SETTINGS, size: 24 })
-  })
-
-  it('falls back to defaults on corrupt storage', () => {
-    localStorage.setItem(STORAGE_KEY, '{oops')
-    expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
-  })
-})

@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type {
   APIKey,
@@ -13,6 +13,8 @@ import type {
   Outline,
   ProviderInfo,
   SignupRequest,
+  TestKeyRequest,
+  TestKeyResult,
   UpdateBookRequest,
   User,
 } from './types.gen'
@@ -55,11 +57,21 @@ export const providersQuery = queryOptions({
 })
 export const useProviders = () => useQuery(providersQuery)
 
+/** Chu kỳ poll danh sách truyện: 15s khi tab đang hiển thị, 60s khi tab ẩn (đỡ tải server). */
+export function booksPollInterval(): number {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden' ? 60_000 : 15_000
+}
+
 export const useBooks = () =>
   useQuery({
     queryKey: qk.books,
     queryFn: async ({ signal }) => (await api.get<Book[] | null>('/api/books', { signal })) ?? [],
-    refetchInterval: 15_000,
+    // Chu kỳ chỉ tính lại sau mỗi lượt tải, nên bật tải lại khi quay về tab (mặc định chung đang tắt)
+    // để không phải chờ hết chu kỳ 60s đã đặt lúc tab ẩn.
+    refetchInterval: booksPollInterval,
+    refetchOnWindowFocus: true,
+    // Tiêu đề tab "(n)" phải cập nhật cả khi tab ẩn.
+    refetchIntervalInBackground: true,
   })
 
 export const bookQuery = (id: string) =>
@@ -133,6 +145,8 @@ export function useCreateKey() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (req: CreateAPIKeyRequest) => api.post<APIKey>('/api/keys', req),
+    // Key thô nằm trong `variables` của mutation: không giữ lại trong cache sau khi xong.
+    gcTime: 0,
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.keys }),
   })
 }
@@ -144,6 +158,13 @@ export function useDeleteKey() {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.keys }),
   })
 }
+
+/** Kiểm một key đã lưu (chỉ gửi `key_id`, không bao giờ gửi key thô). Không đổi dữ liệu nên không invalidate. */
+export const useTestKey = () =>
+  useMutation({
+    mutationFn: (keyId: string) =>
+      api.post<TestKeyResult>('/api/keys/test', { key_id: keyId } satisfies TestKeyRequest),
+  })
 
 export function useCreateBook() {
   const qc = useQueryClient()
@@ -165,6 +186,26 @@ export function usePatchBook(id: string) {
       void qc.invalidateQueries({ queryKey: qk.books })
     },
   })
+}
+
+/** Xoá truyện. Server trả 202 rồi xoá ở nền; truyện biến khỏi danh sách ngay. */
+export function useDeleteBook(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.del<void>(bookPath(id)),
+    onSuccess: () => {
+      qc.setQueryData<Book[]>(qk.books, (list) => list?.filter((b) => b.id !== id))
+      void qc.invalidateQueries({ queryKey: qk.books })
+    },
+  })
+}
+
+/**
+ * Bỏ cache của truyện đã xoá (cả chương, dàn ý). Gọi sau khi đã rời trang truyện: bỏ lúc
+ * trang còn mount thì observer tạo lại query và tải lại một truyện không còn tồn tại.
+ */
+export function forgetBook(qc: QueryClient, id: string) {
+  qc.removeQueries({ queryKey: qk.book(id) })
 }
 
 export type BookCommand = 'pause' | 'resume' | 'next'
