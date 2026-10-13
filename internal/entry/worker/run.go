@@ -431,6 +431,11 @@ func (s *session) execute() {
 func (s *session) runAction() (bool, error) {
 	switch s.init.Action {
 	case api.ActionStart:
+		// Lượt start bị gián đoạn (server tắt hoặc sập) được chạy lại vẫn với action
+		// start: thư mục đã có tiến độ thì khôi phục, không tạo lại từ đầu.
+		if label, err := s.eng.Resume(); err != nil || label != "" {
+			return false, err
+		}
 		prompt, err := startup.PrepareQuick(s.init.Prompt)
 		if err != nil {
 			return false, err

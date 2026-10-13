@@ -25,7 +25,7 @@ type fakeEngine struct {
 	startBlock chan struct{}
 	steerBlock chan struct{}
 
-	resumeLabel string
+	resumeLabel string // rỗng = thư mục truyện mới, chưa có gì để khôi phục
 	startErr    error
 	// continueStarts=false: Continue không khởi động engine (vd. chỉ trả lời).
 	continueStarts bool
@@ -39,7 +39,6 @@ func newFakeEngine() *fakeEngine {
 		stream:         make(chan string, 256),
 		done:           make(chan struct{}, 4),
 		continueStarts: true,
-		resumeLabel:    "Khôi phục",
 		closeCalled:    make(chan struct{}),
 	}
 }

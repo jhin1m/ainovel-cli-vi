@@ -215,8 +215,8 @@ func TestRunStartUntilReviewWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := eng.Calls()
-	want := []string{"SetAdvanceMode:review", "PrepareUserRules", "StartPrepared"}
-	if !slices.Equal(calls[:3], want) {
+	want := []string{"SetAdvanceMode:review", "Resume", "PrepareUserRules", "StartPrepared"}
+	if !slices.Equal(calls[:4], want) {
 		t.Fatalf("thứ tự lời gọi sai: %v", calls)
 	}
 	if !slices.Contains(calls, "Close") {
@@ -273,6 +273,7 @@ func TestRunAbortDuringStart(t *testing.T) {
 
 func TestRunStdinEOFClosesEngine(t *testing.T) {
 	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
 	h := startHarness(t, eng, nil)
 	h.send(testInit(h.bookDir, api.ActionResume))
 	waitCall(t, eng, "Resume")
@@ -345,6 +346,22 @@ func TestRunResumeNothingToResume(t *testing.T) {
 	}
 }
 
+func TestRunStartOverExistingProgressResumes(t *testing.T) {
+	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
+	h := startHarness(t, eng, nil)
+	h.send(testInit(h.bookDir, api.ActionStart))
+	waitCall(t, eng, "Resume")
+	eng.finish(func(s *host.UISnapshot) { s.Phase = "writing"; s.CompletedCount = 2 })
+	h.expect(api.MsgExit, 2*time.Second)
+	_ = h.wait(time.Second)
+	for _, c := range eng.Calls() {
+		if c == "StartPrepared" || c == "PrepareUserRules" {
+			t.Fatalf("thư mục đã có tiến độ không được tạo lại truyện; calls=%v", eng.Calls())
+		}
+	}
+}
+
 func TestRunAdvance(t *testing.T) {
 	eng := newFakeEngine()
 	h := startHarness(t, eng, nil)
@@ -378,6 +395,7 @@ func TestRunBudgetRefusedAtStart(t *testing.T) {
 
 func TestRunEngineErrorReportsLastError(t *testing.T) {
 	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
 	eng.snap.AdvanceMode = "auto"
 	h := startHarness(t, eng, nil)
 	init := testInit(h.bookDir, api.ActionResume)
@@ -471,6 +489,7 @@ func TestRunInitFailures(t *testing.T) {
 
 func TestRunSkipsSetAdvanceModeWhenUnchanged(t *testing.T) {
 	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
 	eng.snap.AdvanceMode = api.AdvanceReview
 	h := startHarness(t, eng, nil)
 	h.send(testInit(h.bookDir, api.ActionResume))
@@ -513,6 +532,7 @@ func TestRunCommandAfterInitWaitsForAction(t *testing.T) {
 
 func TestRunReportsConsumedHold(t *testing.T) {
 	eng := newFakeEngine()
+	eng.resumeLabel = "Khôi phục"
 	h := startHarness(t, eng, nil)
 	init := testInit(h.bookDir, api.ActionResume)
 	init.AdvanceMode = api.AdvanceAuto
