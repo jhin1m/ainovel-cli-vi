@@ -1,7 +1,7 @@
 ---
 title: "Bản web cho ainovel-cli-vi (chế độ serve + SPA)"
 description: "Thêm `ainovel-cli serve` (HTTP + SSE, auth, BYOK, Postgres). Mỗi truyện chạy bằng một process `ainovel-cli worker` riêng. Kèm React SPA nhúng vào binary, mở đường cho PWA/app."
-status: in-progress
+status: completed
 priority: P1
 effort: "13d"
 tags: [web, server, go, react, pwa, byok]
