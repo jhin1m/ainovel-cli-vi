@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -27,35 +26,58 @@ const (
 
 const maxDisplayNameLen = 60
 
+// signupsPerDay: số lần đăng ký mỗi IP (IPv6 theo /64) trong một ngày. Đăng ký
+// tự do nên cần trần riêng ngoài limiter 30/phút dùng chung với đăng nhập.
+const signupsPerDay = 10
+
 // Service gom các handler tài khoản.
 type Service struct {
 	pool     *pgxpool.Pool
 	sessions *Sessions
 	dev      bool
 
-	ipLimiter    *Limiter // mọi request auth theo IP
-	loginLimiter *Limiter // đăng nhập theo (IP, email)
-	userLimiter  *Limiter // đổi mật khẩu / nhập lại mật khẩu theo user
+	ipLimiter     *Limiter // mọi request auth theo IP
+	signupLimiter *Limiter // đăng ký theo IP, cửa sổ một ngày
+	loginLimiter  *Limiter // đăng nhập theo (IP, email)
+	userLimiter   *Limiter // đổi mật khẩu theo user
 }
 
 // NewService tạo service auth. dev=true dùng cookie không Secure cho http://localhost.
 func NewService(pool *pgxpool.Pool, dev bool) *Service {
 	return &Service{
-		pool:         pool,
-		sessions:     NewSessions(pool),
-		dev:          dev,
-		ipLimiter:    NewLimiter(30),
-		loginLimiter: NewLimiter(5),
-		userLimiter:  NewLimiter(5),
+		pool:          pool,
+		sessions:      NewSessions(pool),
+		dev:           dev,
+		ipLimiter:     NewLimiter(30),
+		signupLimiter: NewLimiterPer(signupsPerDay, 24*time.Hour),
+		loginLimiter:  NewLimiter(5),
+		userLimiter:   NewLimiter(5),
 	}
 }
 
 // Sessions trả về store session (dọn định kỳ).
 func (s *Service) Sessions() *Sessions { return s.sessions }
 
+// PurgeAbandonedUsers xoá tài khoản thường tạo trước olderThan mà không có key,
+// truyện hay session nào (đăng ký rồi bỏ đi). Trả số tài khoản đã xoá. Admin
+// không bao giờ bị xoá: tài khoản admin tạo bằng CLI có thể chưa đăng nhập lần nào.
+func (s *Service) PurgeAbandonedUsers(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM users u
+		WHERE NOT u.is_admin AND u.created_at < now() - $1::interval
+			AND NOT EXISTS (SELECT 1 FROM api_keys k WHERE k.user_id = u.id)
+			AND NOT EXISTS (SELECT 1 FROM books b WHERE b.user_id = u.id)
+			AND NOT EXISTS (SELECT 1 FROM sessions x WHERE x.user_id = u.id)`, olderThan.String())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // SweepLimiters dọn rate limiter; gọi định kỳ.
 func (s *Service) SweepLimiters() {
 	s.ipLimiter.Sweep()
+	s.signupLimiter.Sweep()
 	s.loginLimiter.Sweep()
 	s.userLimiter.Sweep()
 }
@@ -113,7 +135,7 @@ func (s *Service) RequireUser(next http.Handler) http.Handler {
 	})
 }
 
-// VerifyUserPassword kiểm mật khẩu hiện tại của user (dùng khi thêm API key).
+// VerifyUserPassword kiểm mật khẩu hiện tại của user (dùng khi đổi mật khẩu).
 // Có rate limit theo user để phiên bị chiếm không dò được mật khẩu.
 func (s *Service) VerifyUserPassword(ctx context.Context, userID, password string) error {
 	if ok, wait := s.userLimiter.Allow(userID); !ok {
@@ -162,8 +184,8 @@ func tooMany(wait time.Duration) error { return httpx.TooManyRequests(wait) }
 // writeErr ghi lỗi chuẩn (gồm Retry-After cho 429).
 func writeErr(w http.ResponseWriter, r *http.Request, err error) { httpx.WriteErr(w, r, err) }
 
-// ipKey là khoá rate limit theo IP; IPv6 gom theo /64 vì một máy thường có cả dải.
-func ipKey(r *http.Request) string {
+// IPKey là khoá rate limit theo IP; IPv6 gom theo /64 vì một máy thường có cả dải.
+func IPKey(r *http.Request) string {
 	ip := httpx.ClientIPFrom(r.Context())
 	if ip.Is6() && !ip.Is4In6() {
 		if p, err := ip.Prefix(64); err == nil {
@@ -174,7 +196,7 @@ func ipKey(r *http.Request) string {
 }
 
 func (s *Service) allowIP(r *http.Request) error {
-	if ok, wait := s.ipLimiter.Allow(ipKey(r)); !ok {
+	if ok, wait := s.ipLimiter.Allow(IPKey(r)); !ok {
 		return tooMany(wait)
 	}
 	return nil
@@ -190,23 +212,6 @@ func normalizeEmail(raw string) (string, error) {
 		return "", httpx.NewError(http.StatusBadRequest, "invalid_email", "Email không hợp lệ")
 	}
 	return strings.ToLower(email), nil
-}
-
-// NormalizeInviteCode chuẩn hoá code người dùng gõ (bỏ gạch, khoảng trắng, hoa thường).
-func NormalizeInviteCode(code string) string {
-	code = strings.ToUpper(code)
-	return strings.Map(func(r rune) rune {
-		if r == '-' || r == ' ' || r == '\t' {
-			return -1
-		}
-		return r
-	}, code)
-}
-
-// HashInviteCode băm code đã chuẩn hoá; DB chỉ giữ giá trị băm.
-func HashInviteCode(code string) []byte {
-	sum := sha256.Sum256([]byte(NormalizeInviteCode(code)))
-	return sum[:]
 }
 
 func (s *Service) handleSignup(w http.ResponseWriter, r *http.Request) {
@@ -233,8 +238,10 @@ func (s *Service) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, httpx.NewError(http.StatusBadRequest, "invalid_display_name", "Tên hiển thị phải có từ 1 đến 60 ký tự"))
 		return
 	}
-	if strings.TrimSpace(req.InviteCode) == "" {
-		writeErr(w, r, httpx.NewError(http.StatusBadRequest, "invite_required", "Cần mã mời để đăng ký"))
+	// Trần theo ngày tính sau validate: payload hỏng không tốn lượt, mỗi lượt là
+	// một lần băm argon2 và có thể là một tài khoản mới.
+	if ok, wait := s.signupLimiter.Allow(IPKey(r)); !ok {
+		writeErr(w, r, httpx.TooManyToday(wait))
 		return
 	}
 	hash, err := HashPassword(r.Context(), req.Password)
@@ -244,27 +251,14 @@ func (s *Service) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var u User
-	err = pgx.BeginFunc(r.Context(), s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `
-			UPDATE invite_codes SET used_count = used_count + 1
-			WHERE code_hash = $1 AND used_count < max_uses AND (expires_at IS NULL OR expires_at > now())`,
-			HashInviteCode(req.InviteCode))
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return httpx.NewError(http.StatusForbidden, "invite_invalid", "Mã mời không hợp lệ, đã hết lượt hoặc đã hết hạn")
-		}
-		err = tx.QueryRow(r.Context(), `
-			INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3)
-			RETURNING id::text, email::text, display_name, is_admin, created_at`,
-			email, hash, name).Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsAdmin, &u.CreatedAt)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return httpx.NewError(http.StatusConflict, "email_taken", "Email này đã được đăng ký")
-		}
-		return err
-	})
+	err = s.pool.QueryRow(r.Context(), `
+		INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3)
+		RETURNING id::text, email::text, display_name, is_admin, created_at`,
+		email, hash, name).Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsAdmin, &u.CreatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		err = httpx.NewError(http.StatusConflict, "email_taken", "Email này đã được đăng ký")
+	}
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -296,7 +290,7 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Theo (IP, email): kẻ tấn công ở IP khác không khoá được tài khoản người khác.
-	if ok, wait := s.loginLimiter.Allow(ipKey(r) + "|" + email); !ok {
+	if ok, wait := s.loginLimiter.Allow(IPKey(r) + "|" + email); !ok {
 		writeErr(w, r, tooMany(wait))
 		return
 	}

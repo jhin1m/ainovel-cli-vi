@@ -7,32 +7,27 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/voocel/ainovel-cli/internal/server/admin"
-	"github.com/voocel/ainovel-cli/internal/server/db"
 )
 
 const serveUsage = `Cách dùng:
-  ainovel-cli serve                                         chạy server web
-  ainovel-cli serve invite create [--uses N] [--expires 7d] tạo mã mời
+  ainovel-cli serve   chạy server web (không có lệnh con)
 
 Cấu hình qua biến môi trường (bắt buộc: AINOVEL_DATABASE_URL_FILE, AINOVEL_MASTER_KEY_FILE).
 Xem docs/web-server.md để biết đầy đủ.
 `
 
-// wantsHelp: `serve help`, hoặc -h/--help ở cuối (kể cả sau lệnh con như `invite create`).
+// wantsHelp: `serve help`, `serve -h` hoặc `serve --help`.
 func wantsHelp(args []string) bool {
-	if len(args) == 0 {
+	if len(args) != 1 {
 		return false
 	}
-	if len(args) == 1 && args[0] == "help" {
+	switch args[0] {
+	case "help", "-h", "--help":
 		return true
 	}
-	last := args[len(args)-1]
-	return last == "-h" || last == "--help"
+	return false
 }
 
 // Command chạy `ainovel-cli serve [...]` và trả về exit code.
@@ -41,18 +36,16 @@ func Command(args []string, version string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, serveUsage)
 		return 0
 	}
+	// Báo lệnh con lạ trước khi đọc cấu hình để lỗi rõ ràng kể cả khi thiếu secret.
+	if len(args) > 0 {
+		fmt.Fprintf(stderr, "serve: lệnh con %q không được hỗ trợ (serve không có lệnh con)\n", strings.Join(args, " "))
+		return 2
+	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	cfg, err := LoadConfig(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, "serve:", err)
 		return 1
-	}
-	if len(args) > 0 {
-		if len(args) >= 2 && args[0] == "invite" && args[1] == "create" {
-			return inviteCreate(cfg, args[2:], stdout, stderr)
-		}
-		fmt.Fprintf(stderr, "serve: lệnh con %q không được hỗ trợ (có: invite create [--uses N] [--expires 7d])\n", strings.Join(args, " "))
-		return 2
 	}
 	for _, w := range cfg.Warnings {
 		slog.Warn(w)
@@ -77,54 +70,5 @@ func Command(args []string, version string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "serve:", err)
 		return 1
 	}
-	return 0
-}
-
-// inviteCreate: `ainovel-cli serve invite create [--uses N] [--expires 7d]` in mã mời ra stdout.
-func inviteCreate(cfg Config, args []string, stdout, stderr io.Writer) int {
-	uses, ttlText := 1, "7d"
-	for i := 0; i < len(args); i++ {
-		if i+1 >= len(args) {
-			fmt.Fprintf(stderr, "serve invite create: %s thiếu giá trị\n", args[i])
-			return 2
-		}
-		switch args[i] {
-		case "--uses":
-			n, err := strconv.Atoi(args[i+1])
-			if err != nil || n <= 0 {
-				fmt.Fprintln(stderr, "serve invite create: --uses phải là số nguyên > 0")
-				return 2
-			}
-			uses = n
-		case "--expires":
-			ttlText = args[i+1]
-		default:
-			fmt.Fprintf(stderr, "serve invite create: tham số %q không hợp lệ\n", args[i])
-			return 2
-		}
-		i++
-	}
-	ttl, err := admin.ParseTTL(ttlText)
-	if err != nil {
-		fmt.Fprintln(stderr, "serve invite create:", err)
-		return 2
-	}
-	ctx := context.Background()
-	pool, err := db.Open(ctx, cfg.DatabaseURL)
-	if err != nil {
-		fmt.Fprintln(stderr, "serve invite create:", err)
-		return 1
-	}
-	defer pool.Close()
-	if err := db.Migrate(ctx, pool); err != nil {
-		fmt.Fprintln(stderr, "serve invite create:", err)
-		return 1
-	}
-	code, err := admin.CreateInvite(ctx, pool, uses, ttl)
-	if err != nil {
-		fmt.Fprintln(stderr, "serve invite create:", err)
-		return 1
-	}
-	fmt.Fprintln(stdout, code)
 	return 0
 }

@@ -19,20 +19,23 @@ const (
 
 // Book là một truyện của người dùng.
 type Book struct {
-	ID          string        `json:"id"`
-	Prompt      string        `json:"prompt"`
-	Status      BookStatus    `json:"status"`
-	StopReason  string        `json:"stop_reason"`
-	Provider    string        `json:"provider"`
-	Model       string        `json:"model"`
-	APIKeyID    string        `json:"api_key_id"` // rỗng nếu key đã bị xoá
-	BudgetUSD   float64       `json:"budget_usd"`
-	AdvanceMode string        `json:"advance_mode"`
-	PendingText string        `json:"pending_text"` // can thiệp đang chờ lượt chạy kế tiếp
-	LastError   string        `json:"last_error"`
-	Snapshot    *BookSnapshot `json:"snapshot"` // nil khi engine chưa chạy lần nào
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	ID         string     `json:"id"`
+	Prompt     string     `json:"prompt"`
+	Status     BookStatus `json:"status"`
+	StopReason string     `json:"stop_reason"`
+	Provider   string     `json:"provider"`
+	Model      string     `json:"model"`
+	APIKeyID   string     `json:"api_key_id"` // rỗng nếu key đã bị xoá
+	BudgetUSD  float64    `json:"budget_usd"`
+	// Subscription: provider là gói thuê bao (suy ra từ provider, không lưu DB);
+	// budget_usd luôn 0 và chi phí USD không áp dụng.
+	Subscription bool          `json:"subscription"`
+	AdvanceMode  string        `json:"advance_mode"`
+	PendingText  string        `json:"pending_text"` // can thiệp đang chờ lượt chạy kế tiếp
+	LastError    string        `json:"last_error"`
+	Snapshot     *BookSnapshot `json:"snapshot"` // nil khi engine chưa chạy lần nào
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
 }
 
 // CreateBookRequest: POST /api/books.

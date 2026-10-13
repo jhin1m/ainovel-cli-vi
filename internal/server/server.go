@@ -46,14 +46,20 @@ type Server struct {
 	api  *http.ServeMux
 
 	auth    *auth.Service
+	keysH   *keys.Handlers
 	keyRepo *keys.Repo
 	catalog *keys.Catalog
 	sup     *jobs.Supervisor
 	books   *books.Service
 
+	// diskFree đo dung lượng trống (thay được trong test qua Options.DiskFree).
+	diskFree func(dir string) (uint64, bool)
+
 	// bgCtx sống suốt đời server; huỷ khi tắt để dừng các việc nền.
 	bgCtx    context.Context
 	bgCancel context.CancelFunc
+	// bgWG chờ các việc nền có ghi đĩa (làm mới bảng giá) dừng hẳn khi tắt.
+	bgWG sync.WaitGroup
 
 	// closing đóng khi bắt đầu tắt: SSE và việc chạy dài lắng nghe để tự kết thúc.
 	closing     chan struct{}
@@ -70,6 +76,8 @@ type Options struct {
 	Version string
 	Dist    fs.FS         // nil = SPA nhúng trong binary
 	Catalog *keys.Catalog // nil = registry giá mặc định
+	// DiskFree thay cách đo dung lượng trống (test); nil = đo thật bằng statfs.
+	DiskFree func(dir string) (uint64, bool)
 }
 
 // New mở Postgres, chạy migration và dựng toàn bộ route.
@@ -111,21 +119,27 @@ func newServer(cfg Config, pool *pgxpool.Pool, opts Options) (*Server, error) {
 		catalog = keys.NewCatalog(models.DefaultRegistry())
 	}
 	s := &Server{
-		cfg:     cfg,
-		version: opts.Version,
-		pool:    pool,
-		dist:    dist,
-		root:    http.NewServeMux(),
-		api:     http.NewServeMux(),
-		closing: make(chan struct{}),
-		auth:    auth.NewService(pool, cfg.Dev),
-		keyRepo: keys.NewRepo(pool, box),
-		catalog: catalog,
+		cfg:      cfg,
+		version:  opts.Version,
+		pool:     pool,
+		dist:     dist,
+		root:     http.NewServeMux(),
+		api:      http.NewServeMux(),
+		closing:  make(chan struct{}),
+		auth:     auth.NewService(pool, cfg.Dev),
+		keyRepo:  keys.NewRepo(pool, box),
+		catalog:  catalog,
+		diskFree: diskFree,
+	}
+	if opts.DiskFree != nil {
+		s.diskFree = opts.DiskFree
 	}
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
 	jobCfg := jobs.Config{
 		DataDir: cfg.DataDir, Version: opts.Version, Language: "vi",
 		MaxJobs: cfg.Limits.MaxJobs, MaxJobsPerUser: cfg.Limits.MaxJobsPerUser,
+		MaxRun:     time.Duration(cfg.Limits.MaxRunMinutes) * time.Minute,
+		SliceGrace: time.Duration(cfg.Limits.SliceGraceMinutes) * time.Minute,
 	}
 	if cfg.Dev && cfg.DevWorkerBin != "" {
 		jobCfg.WorkerBin = cfg.DevWorkerBin
@@ -135,15 +149,20 @@ func newServer(cfg Config, pool *pgxpool.Pool, opts Options) (*Server, error) {
 	s.books = books.NewService(books.Deps{
 		Repo: books.NewRepo(pool), Keys: s.keyRepo, Catalog: catalog, Auth: s.auth, Sup: s.sup,
 		Exporter: books.NewExporter(cfg.Limits.MaxExports), DataDir: cfg.DataDir, Closing: s.closing,
+		DiskFree: func() (uint64, bool) { return s.diskFree(cfg.DataDir) },
 		Limits: books.Limits{
 			MaxBooksPerUser: cfg.Limits.MaxBooksPerUser, MaxBookBudgetUSD: cfg.Limits.MaxBookBudgetUSD,
 			MaxSSEPerUser: cfg.Limits.MaxSSEPerUser, MaxSSETotal: cfg.Limits.MaxSSETotal,
+			MinFreeDiskBytes: lowDiskBytes,
 		},
 	})
 	// Tắt hai bước: đánh dấu truyện đang chạy là interrupted trước khi dừng HTTP,
 	// dừng worker sau khi HTTP đã dừng, rồi mới huỷ việc nền và đóng pool.
 	s.beforeShutdown = append(s.beforeShutdown, s.sup.BeforeShutdown)
-	s.afterHTTP = append(s.afterHTTP, s.sup.Shutdown, func(context.Context) { s.bgCancel() })
+	s.afterHTTP = append(s.afterHTTP, s.sup.Shutdown, func(context.Context) {
+		s.bgCancel()
+		s.bgWG.Wait()
+	})
 	if err := s.routes(); err != nil {
 		return nil, err
 	}
@@ -160,7 +179,8 @@ func (s *Server) routes() error {
 	// riêng và ném lại panic, stack trace bắt ở lớp ngoài là của TimeoutHandler.
 	s.root.Handle("/api/", httpx.Chain(s.api, crossOrigin, httpx.RequireJSON, httpx.MaxBytes(maxBodyBytes), httpx.Timeout(requestTimeout), httpx.Recover))
 	s.auth.Register(s.api)
-	keys.NewHandlers(s.keyRepo, s.catalog, s.auth, s.books.KeyInUse).Register(s.api)
+	s.keysH = keys.NewHandlers(s.keyRepo, s.catalog, s.auth, s.books.KeyInUse)
+	s.keysH.Register(s.api)
 	s.books.Register(s.api, s.root)
 	s.api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Không tìm thấy API này")
@@ -249,10 +269,14 @@ func (s *Server) shutdownRest(ctx context.Context) {
 	}
 }
 
-// startBackground chạy các việc nền: nạp/làm mới bảng giá model, dọn session hết
-// hạn và rate limiter.
+// startBackground chạy các việc nền: nạp/làm mới bảng giá model và vòng dọn
+// định kỳ (cleanup).
 func (s *Server) startBackground() error {
-	s.catalog.StartRefresh(s.bgCtx, filepath.Join(s.cfg.DataDir, "cache"))
+	s.bgWG.Add(1)
+	go func() {
+		defer s.bgWG.Done()
+		s.catalog.RefreshLoop(s.bgCtx, filepath.Join(s.cfg.DataDir, "cache"))
+	}()
 	if err := s.sup.Start(s.bgCtx); err != nil {
 		return err
 	}
@@ -265,17 +289,32 @@ func (s *Server) startBackground() error {
 			case <-s.bgCtx.Done():
 				return
 			case <-t.C:
-				if err := s.auth.Sessions().PurgeExpired(s.bgCtx); err != nil {
-					slog.Warn("dọn session hết hạn thất bại", "err", err)
-				}
-				s.auth.SweepLimiters()
+				s.cleanup(s.bgCtx)
 			}
 		}
 	}()
 	return nil
 }
 
-// lowDiskBytes: dưới mức này /healthz báo disk_low để cảnh báo trước khi đầy.
+// abandonedAccountAge: tài khoản không có key, truyện hay session quá mức này thì bị dọn.
+const abandonedAccountAge = 30 * 24 * time.Hour
+
+// cleanup dọn session hết hạn, tài khoản bỏ hoang và rate limiter. Session dọn
+// trước để tài khoản chỉ còn session hết hạn cũng được tính là bỏ hoang.
+func (s *Server) cleanup(ctx context.Context) {
+	if err := s.auth.Sessions().PurgeExpired(ctx); err != nil {
+		slog.Warn("dọn session hết hạn thất bại", "err", err)
+	}
+	if n, err := s.auth.PurgeAbandonedUsers(ctx, abandonedAccountAge); err != nil {
+		slog.Warn("dọn tài khoản bỏ hoang thất bại", "err", err)
+	} else if n > 0 {
+		slog.Info("đã dọn tài khoản bỏ hoang", "count", n)
+	}
+	s.auth.SweepLimiters()
+	s.keysH.SweepLimiters()
+}
+
+// lowDiskBytes: dưới mức này /healthz báo disk_low và không cho tạo truyện mới.
 const lowDiskBytes = 1 << 30
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +325,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.pool == nil || s.pool.Ping(ctx) != nil {
 		dbStatus, status, code = "error", "error", http.StatusServiceUnavailable
 	}
-	free, ok := diskFree(s.cfg.DataDir)
+	free, ok := s.diskFree(s.cfg.DataDir)
 	body := map[string]any{"status": status, "db": dbStatus, "version": s.version}
 	if ok {
 		body["disk_free_bytes"] = free

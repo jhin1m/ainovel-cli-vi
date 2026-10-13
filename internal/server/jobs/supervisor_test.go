@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -53,7 +54,7 @@ func (fakeKeys) DecryptForBook(context.Context, string) (string, []byte, error) 
 
 type fakePricing struct{}
 
-func (fakePricing) PricingFor(model string) (api.ModelPricing, bool) {
+func (fakePricing) PricingFor(_, model string) (api.ModelPricing, bool) {
 	return api.ModelPricing{Provider: "openrouter", ID: model, InputCostPer1M: 1, OutputCostPer1M: 2}, true
 }
 
@@ -950,5 +951,544 @@ func TestPumpStderrCapsLogSize(t *testing.T) {
 	}
 	if tail := p.stderrTail(); tail == "" {
 		t.Fatal("đuôi stderr trong bộ nhớ vẫn phải được giữ")
+	}
+}
+
+// Provider từ chối hẳn: giữ lời giải thích của worker (cắt ≤300 rune) và stop_reason riêng;
+// mã lỗi khác vẫn dùng message chung, không lộ chi tiết nội bộ.
+func TestOutcomeProviderRejected(t *testing.T) {
+	const reason = "Z.ai từ chối yêu cầu (mã 1113): key không thuộc gói Coding Plan."
+	exit := func(r, stop string) *api.WorkerMessage {
+		return &api.WorkerMessage{Type: api.MsgExit, Reason: r, StopReason: stop, Error: "chi tiết nội bộ"}
+	}
+	cases := []struct {
+		name       string
+		exit       *api.WorkerMessage
+		errCode    string
+		errMsg     string
+		stopReason string
+		lastError  string
+	}{
+		{"giữa_lượt", exit(api.ExitStopped, api.StopError), api.ErrCodeProviderRejected, reason, api.StopProviderRejected, reason},
+		{"lúc_khởi_động", exit(api.ExitError, ""), api.ErrCodeProviderRejected, reason, api.StopProviderRejected, reason},
+		{"quá_dài_bị_cắt", exit(api.ExitError, ""), api.ErrCodeProviderRejected, strings.Repeat("ạ", 400), api.StopProviderRejected, strings.Repeat("ạ", 299) + "…"},
+		{"đúng_300_rune_giữ_nguyên", exit(api.ExitError, ""), api.ErrCodeProviderRejected, strings.Repeat("ạ", 300), api.StopProviderRejected, strings.Repeat("ạ", 300)},
+		{"message_rỗng", exit(api.ExitError, ""), api.ErrCodeProviderRejected, "  ", api.StopError, msgRunFailed},
+		{"mã_engine_giữ_message_chung", exit(api.ExitError, ""), api.ErrCodeEngine, "open /data/books/x: permission denied", api.StopError, msgRunFailed},
+		{"mã_engine_giữa_lượt", exit(api.ExitStopped, api.StopError), api.ErrCodeEngine, "stack trace", api.StopError, msgRunFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newProc("b", "u", nil)
+			p.exit = tc.exit
+			p.errCode, p.errMsg = tc.errCode, tc.errMsg
+			res, requeue := p.outcome()
+			if requeue {
+				t.Fatal("không được requeue")
+			}
+			if res.Status != api.StatusFailed || !res.Failed || res.StopReason != tc.stopReason || res.LastError != tc.lastError {
+				t.Fatalf("outcome = {status:%s failed:%v stop:%s last_error:%q}, muốn stop:%s last_error:%q",
+					res.Status, res.Failed, res.StopReason, res.LastError, tc.stopReason, tc.lastError)
+			}
+			if n := len([]rune(res.LastError)); n > 300 {
+				t.Fatalf("last_error dài %d rune", n)
+			}
+		})
+	}
+}
+
+// Worker bị chia lượt cắt: về queued, giữ việc đang chờ (như drain), không tính
+// lỗi — kể cả khi phải SIGKILL. Worker tự kết thúc hoặc user đã bấm tạm dừng thì
+// giữ kết quả thật.
+func TestOutcomeSliced(t *testing.T) {
+	sliced := func(exit *api.WorkerMessage) finishResult {
+		p := newProc("b", "u", nil)
+		p.sliced.Store(true)
+		p.exit = exit
+		res, requeue := p.outcome()
+		if requeue {
+			t.Fatal("lượt bị cắt không đi đường requeue lock_busy")
+		}
+		return res
+	}
+	for name, exit := range map[string]*api.WorkerMessage{
+		"shutdown": {Type: api.MsgExit, Reason: api.ExitShutdown},
+		"sigkill":  nil,
+	} {
+		res := sliced(exit)
+		if res.Status != api.StatusQueued || !res.ResumeNext || res.ClearPending || res.Failed || res.LastError != "" {
+			t.Fatalf("%s: lượt bị cắt = %+v, muốn queued, giữ pending, không lỗi", name, res)
+		}
+	}
+	if res := sliced(&api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitStopped, StopReason: api.StopComplete}); res.Status != api.StatusCompleted || res.ResumeNext {
+		t.Fatalf("worker tự hoàn thành dù bị cắt phải giữ completed: %+v", res)
+	}
+	if res := sliced(&api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitShutdown, StopReason: api.StopUser}); res.Status != api.StatusPaused || res.ResumeNext {
+		t.Fatalf("user đã bấm tạm dừng thì phải paused: %+v", res)
+	}
+}
+
+// sliceVictimLocked chỉ chọn worker khi đủ điều kiện; trạng thái dựng tay, không cần DB.
+func TestSliceVictimConditions(t *testing.T) {
+	now := time.Now()
+	newSup := func(maxJobs, perUser int) *Supervisor {
+		return New(Config{MaxJobs: maxJobs, MaxJobsPerUser: perUser, MaxRun: time.Minute}, nil, nil, nil, NewHubs())
+	}
+	addProc := func(s *Supervisor, book, user string, age time.Duration) *proc {
+		p := newProc(book, user, nil)
+		p.started = now.Add(-age)
+		p.markReady()
+		s.procs[book] = p
+		s.perUser[user]++
+		return p
+	}
+	other := []queuedBook{{ID: "q1", UserID: "B"}}
+
+	s := newSup(1, 1)
+	old := addProc(s, "a1", "A", 2*time.Minute)
+	if got := s.sliceVictimLocked(other, now); got != old {
+		t.Fatalf("đủ điều kiện phải cắt a1, got %v", got)
+	}
+	if got := s.sliceVictimLocked([]queuedBook{{ID: "q2", UserID: "A"}}, now); got != nil {
+		t.Fatal("truyện chờ cùng user không được làm cắt")
+	}
+	s.cfg.MaxRun = 0
+	if got := s.sliceVictimLocked(other, now); got != nil {
+		t.Fatal("MaxRun = 0 phải tắt chia lượt")
+	}
+
+	s = newSup(2, 1)
+	addProc(s, "a1", "A", 30*time.Second)
+	if got := s.sliceVictimLocked(other, now); got != nil {
+		t.Fatal("lượt chưa quá MaxRun không được cắt")
+	}
+
+	// Chọn lượt chạy lâu nhất; user B đã chạm trần thì truyện chờ của B không tính.
+	s = newSup(2, 1)
+	addProc(s, "a1", "A", 2*time.Minute)
+	b1 := addProc(s, "b1", "B", 3*time.Minute)
+	if got := s.sliceVictimLocked([]queuedBook{{ID: "q1", UserID: "C"}}, now); got != b1 {
+		t.Fatalf("phải cắt lượt lâu nhất b1, got %v", got)
+	}
+	if got := s.sliceVictimLocked(other, now); got != nil {
+		t.Fatal("user của truyện chờ đã chạm MaxJobsPerUser thì không cắt")
+	}
+	s.backoff["q1"] = backoffState{until: now.Add(time.Minute)}
+	if got := s.sliceVictimLocked([]queuedBook{{ID: "q1", UserID: "C"}}, now); got != nil {
+		t.Fatal("truyện chờ đang backoff không được làm cắt")
+	}
+	delete(s.backoff, "q1")
+
+	// Đang có một worker bị cắt chưa thoát: không cắt thêm.
+	b1.sliced.Store(true)
+	if got := s.sliceVictimLocked([]queuedBook{{ID: "q1", UserID: "C"}}, now); got != nil {
+		t.Fatal("đang có worker bị cắt thì không cắt thêm")
+	}
+}
+
+// slicePrompt: worker giả chạy chậm (~3.9s) để lượt chạy vượt MaxRun.
+const slicePrompt = "truyện chậm chia lượt"
+
+// modelChapters trả về số chương trong các event "Viết chương N" đã xong, theo
+// thứ tự, kèm vị trí tương đối với status queued đầu tiên.
+func modelChapters(t *testing.T, r *recorder) (before, after []int) {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	queued := false
+	for _, m := range r.msgs {
+		switch m.Type {
+		case api.SSEStatus:
+			var sc api.StatusChange
+			if json.Unmarshal(m.Data, &sc) == nil && sc.Status == api.StatusQueued {
+				queued = true
+			}
+		case api.SSEEvent:
+			var ev api.Event
+			if json.Unmarshal(m.Data, &ev) != nil || ev.Category != "MODEL" || !ev.Finished || ev.Failed {
+				continue
+			}
+			var n int
+			if _, err := fmt.Sscanf(ev.Summary, "Viết chương %d", &n); err != nil {
+				continue
+			}
+			if queued {
+				after = append(after, n)
+			} else {
+				before = append(before, n)
+			}
+		}
+	}
+	return before, after
+}
+
+// Hết slot và có truyện của user khác chờ: lượt quá MaxRun nhường slot, về cuối
+// hàng, không tính lỗi, rồi chạy tiếp đúng chương còn dở.
+func TestSliceYieldsSlotToOtherUser(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: slicePrompt})
+	waiting := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] user khác đang chờ"})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 1; c.MaxRun = time.Second })
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+
+	waitBook(t, pool, waiting, api.StatusCompleted)
+	if b := mustBook(t, pool, long); b.Status == api.StatusCompleted {
+		t.Fatalf("truyện chờ phải chạy xong trước khi truyện bị cắt hoàn thành")
+	}
+	b := waitBook(t, pool, long, api.StatusCompleted)
+	if b.ResumeFailures != 0 || b.LastError != "" {
+		t.Fatalf("bị cắt không được tính lỗi: %+v", b)
+	}
+	if !isSubsequence(rec.statuses(), []api.BookStatus{api.StatusRunning, api.StatusQueued, api.StatusRunning, api.StatusCompleted}) {
+		t.Fatalf("chuỗi status = %v", rec.statuses())
+	}
+	before, after := modelChapters(t, rec)
+	if len(after) == 0 || after[0] != len(before)+1 {
+		t.Fatalf("lượt sau phải viết tiếp chương %d: trước %v, sau %v", len(before)+1, before, after)
+	}
+	if got := append(before, after...); !slices.Equal(got, []int{1, 2, 3}) {
+		t.Fatalf("mỗi chương phải viết xong đúng một lần, got %v", got)
+	}
+}
+
+// assertNeverSliced chờ truyện hoàn thành và kiểm nó chưa từng bị đưa về queued.
+func assertNeverSliced(t *testing.T, pool *pgxpool.Pool, rec *recorder, id string) {
+	t.Helper()
+	waitBook(t, pool, id, api.StatusCompleted)
+	if slices.Contains(rec.statuses(), api.StatusQueued) {
+		t.Fatalf("truyện %s không được bị cắt: %v", id, rec.statuses())
+	}
+}
+
+// Truyện chờ là của cùng user: không cắt (cắt chỉ đổi thứ tự giữa các truyện của user đó).
+func TestSliceSkipsSameUser(t *testing.T) {
+	pool := dbtest.New(t)
+	uid, kid := newUser(t, pool)
+	long := insertBook(t, pool, uid, kid, bookFix{action: api.ActionStart, text: slicePrompt})
+	insertBook(t, pool, uid, kid, bookFix{action: api.ActionStart, text: "[fake:fast] cùng user"})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 1; c.MaxRun = 200 * time.Millisecond })
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+	assertNeverSliced(t, pool, rec, long)
+}
+
+// User của truyện chờ đã chạm MaxJobsPerUser: cắt cũng không chạy được nó, nên không cắt.
+func TestSliceSkipsUserAtCap(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	longA := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: slicePrompt})
+	longB := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: slicePrompt})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 2; c.MaxJobsPerUser = 1; c.MaxRun = 200 * time.Millisecond })
+	recA := record(t, sup.Hubs().Get(longA).Subscribe())
+	start(t, sup)
+	waitBook(t, pool, longA, api.StatusRunning)
+	waitBook(t, pool, longB, api.StatusRunning)
+	insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] B đã chạm trần"})
+	sup.Kick()
+	assertNeverSliced(t, pool, recA, longA)
+}
+
+// Còn slot trống: truyện chờ tự chạy, không cắt lượt đang quá MaxRun.
+func TestSliceSkipsWhenSlotFree(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: slicePrompt})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 2; c.MaxRun = 200 * time.Millisecond })
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+	waitBook(t, pool, long, api.StatusRunning)
+	time.Sleep(300 * time.Millisecond) // lượt chạy đã quá MaxRun
+	other := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] còn slot"})
+	sup.Kick()
+	waitBook(t, pool, other, api.StatusCompleted)
+	assertNeverSliced(t, pool, rec, long)
+}
+
+// Khi cắt, truyện chờ khác của cùng user cũng xuống cuối hàng: slot nhả ra về
+// user khác, không quay lại user vừa bị cắt.
+func TestSliceDeprioritizesSameUserQueue(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: slicePrompt})
+	nextA := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: "[fake:fast] truyện thứ hai của A"})
+	waitingB := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] user B chờ sau"})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 1; c.MaxJobsPerUser = 1; c.MaxRun = time.Second })
+	start(t, sup)
+
+	for _, id := range []string{long, nextA, waitingB} {
+		waitBook(t, pool, id, api.StatusCompleted)
+	}
+	startedAt := func(id string) time.Time {
+		var ts time.Time
+		if err := pool.QueryRow(context.Background(), `SELECT started_at FROM books WHERE id = $1::uuid`, id).Scan(&ts); err != nil {
+			t.Fatal(err)
+		}
+		return ts
+	}
+	if !startedAt(waitingB).Before(startedAt(nextA)) {
+		t.Fatal("slot nhả ra phải về user B trước truyện thứ hai của user A")
+	}
+}
+
+// Lượt bị cắt dừng ở ranh giới chương: về hàng đợi (không phải waiting_review)
+// khi user muốn auto, xoá pending vì chương đã commit; snapshot giữ chế độ auto.
+// User muốn review thì dừng chờ duyệt là kết quả thật.
+func TestOutcomeSlicedAtChapterBoundary(t *testing.T) {
+	boundaryWith := func(mode, stop string) finishResult {
+		p := newProc("b", "u", nil)
+		p.sliced.Store(true)
+		p.mode = mode
+		p.lastSnap = &api.BookSnapshot{AdvanceMode: api.AdvanceReview}
+		p.exit = &api.WorkerMessage{Type: api.MsgExit, Reason: api.ExitStopped, StopReason: stop}
+		res, requeue := p.outcome()
+		if requeue {
+			t.Fatal("dừng ở ranh giới chương không đi đường requeue lock_busy")
+		}
+		return res
+	}
+	boundary := func(mode string) finishResult { return boundaryWith(mode, api.StopReviewWait) }
+	res := boundary(api.AdvanceAuto)
+	if res.Status != api.StatusQueued || res.ResumeNext || !res.ClearPending || res.Failed || res.StopReason != "" || res.LastError != "" {
+		t.Fatalf("auto bị cắt ở ranh giới chương = %+v, muốn queued, xoá pending, không lỗi", res)
+	}
+	var snap api.BookSnapshot
+	if err := json.Unmarshal(res.Snapshot, &snap); err != nil || snap.AdvanceMode != api.AdvanceAuto {
+		t.Fatalf("snapshot lưu lại phải mang chế độ auto của user: %s", res.Snapshot)
+	}
+	if res := boundary(api.AdvanceReview); res.Status != api.StatusWaitingReview {
+		t.Fatalf("user muốn review thì phải waiting_review: %+v", res)
+	}
+	// Can thiệp gửi trong lúc ân hạn còn treo ở cổng chương: vẫn là dừng do cắt lượt.
+	if res := boundaryWith(api.AdvanceAuto, api.StopPendingSteer); res.Status != api.StatusQueued || res.Failed {
+		t.Fatalf("auto bị cắt còn can thiệp treo phải về queued: %+v", res)
+	}
+}
+
+// ackWriter giả stdin của worker: ghi lại lệnh nhận được và trả ack ok.
+type ackWriter struct {
+	p   *proc
+	got chan api.WorkerCommand
+}
+
+func (w ackWriter) Write(b []byte) (int, error) {
+	var cmd api.WorkerCommand
+	if err := json.Unmarshal(b, &cmd); err != nil {
+		return 0, err
+	}
+	w.got <- cmd
+	go w.p.handle(api.WorkerMessage{Type: api.MsgAck, ID: cmd.ID, OK: true}, nil)
+	return len(b), nil
+}
+
+func (ackWriter) Close() error { return nil }
+
+func newAckProc() (*proc, chan api.WorkerCommand) {
+	p := newProc("b", "u", NewHubs().Get("b"))
+	got := make(chan api.WorkerCommand, 4)
+	p.stdin = ackWriter{p: p, got: got}
+	return p, got
+}
+
+// Lúc cắt luôn gửi review, kể cả khi user đã chọn review: lệnh đổi chế độ trước đó
+// có thể chưa tới worker (worker chưa sẵn sàng, ack lỗi), worker vẫn đang auto.
+func TestStopAtChapterBoundaryAlwaysSendsReview(t *testing.T) {
+	for _, mode := range []string{api.AdvanceAuto, api.AdvanceReview} {
+		p, got := newAckProc()
+		p.mode = mode
+		p.markReady()
+		if !p.stopAtChapterBoundary("s1") {
+			t.Fatalf("mode %s: worker nhận lệnh thì phải trả true", mode)
+		}
+		select {
+		case cmd := <-got:
+			if cmd.Type != api.MsgSetAdvanceMode || cmd.Mode != api.AdvanceReview {
+				t.Fatalf("mode %s: lệnh gửi sai %+v", mode, cmd)
+			}
+		default:
+			t.Fatalf("mode %s: phải gửi set_advance_mode=review", mode)
+		}
+	}
+}
+
+// Đổi chế độ khi worker chưa sẵn sàng không được giữ mmu trong lúc chờ: run()
+// cần mmu để gán mode trước khi spawn.
+func TestSetAdvanceModeWaitsReadyWithoutLock(t *testing.T) {
+	p, got := newAckProc()
+	p.mode = api.AdvanceAuto
+	type result struct {
+		ack *api.WorkerMessage
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ack, err := p.setAdvanceMode(context.Background(), api.WorkerCommand{Type: api.MsgSetAdvanceMode, ID: "s1", Mode: api.AdvanceReview})
+		done <- result{ack, err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	locked := make(chan struct{})
+	go func() {
+		p.mmu.Lock()
+		p.mmu.Unlock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(time.Second):
+		t.Fatal("setAdvanceMode giữ mmu trong lúc chờ worker sẵn sàng")
+	}
+	p.markReady()
+	r := <-done
+	if r.err != nil || r.ack == nil || !r.ack.OK {
+		t.Fatalf("worker sẵn sàng thì lệnh phải tới: ack=%+v err=%v", r.ack, r.err)
+	}
+	if cmd := <-got; cmd.Mode != api.AdvanceReview || p.advanceMode() != api.AdvanceReview {
+		t.Fatalf("lệnh/mode sai: %+v, mode=%q", cmd, p.advanceMode())
+	}
+}
+
+// Đang cắt lượt: đổi chế độ viết chỉ được ghi nhận, không gửi worker (worker phải
+// giữ review để dừng ở ranh giới chương). Không cắt thì gửi như thường.
+func TestSetAdvanceModeWhileSlicing(t *testing.T) {
+	s := New(Config{MaxJobs: 1, MaxJobsPerUser: 1}, nil, nil, nil, NewHubs())
+	p := newProc("b", "u", nil)
+	p.mode = api.AdvanceAuto
+	p.markReady()
+	s.procs["b"] = p
+	s.perUser["u"] = 1
+
+	// Chưa cắt: lệnh đi xuống worker (proc không có stdin nên ghi lỗi).
+	if _, err := s.Command(context.Background(), "b", api.WorkerCommand{Type: api.MsgSetAdvanceMode, Mode: api.AdvanceReview}); err != ErrNotRunning {
+		t.Fatalf("chưa cắt thì phải gửi worker, err=%v", err)
+	}
+	p.sliced.Store(true)
+	ack, err := s.Command(context.Background(), "b", api.WorkerCommand{Type: api.MsgSetAdvanceMode, Mode: api.AdvanceAuto})
+	if err != nil || ack == nil || !ack.OK {
+		t.Fatalf("đang cắt thì chỉ ghi nhận và trả ack ok: ack=%+v err=%v", ack, err)
+	}
+	if p.advanceMode() != api.AdvanceAuto {
+		t.Fatalf("chế độ user chọn phải được ghi nhận, got %q", p.advanceMode())
+	}
+}
+
+// chapterStarts đếm số lần mỗi chương bắt đầu viết (event MODEL "Viết chương N"
+// chưa xong), kể cả lần bị cắt ngang.
+func chapterStarts(r *recorder) map[int]int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[int]int{}
+	for _, m := range r.msgs {
+		var ev api.Event
+		if m.Type != api.SSEEvent || json.Unmarshal(m.Data, &ev) != nil || ev.Category != "MODEL" || ev.Finished {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(ev.Summary, "Viết chương %d", &n); err == nil {
+			out[n]++
+		}
+	}
+	return out
+}
+
+func advanceModeOf(t *testing.T, pool *pgxpool.Pool, id string) string {
+	t.Helper()
+	var mode string
+	if err := pool.QueryRow(context.Background(), `SELECT advance_mode FROM books WHERE id = $1::uuid`, id).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	return mode
+}
+
+// Có thời gian ân hạn: lượt bị cắt viết nốt chương đang dở rồi mới nhường slot.
+// Không chương nào phải viết lại, truyện auto không rơi vào chờ duyệt và lượt sau
+// chạy tiếp ở auto tới hết.
+func TestSliceWaitsForChapterBoundary(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: slicePrompt})
+	waiting := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] user khác đang chờ"})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 1; c.MaxRun = time.Second; c.SliceGrace = time.Minute })
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+
+	waitBook(t, pool, waiting, api.StatusCompleted)
+	if b := mustBook(t, pool, long); b.Status == api.StatusCompleted {
+		t.Fatalf("truyện chờ phải chạy xong trước khi truyện bị cắt hoàn thành")
+	}
+	b := waitBook(t, pool, long, api.StatusCompleted)
+	if b.ResumeFailures != 0 || b.LastError != "" {
+		t.Fatalf("bị cắt không được tính lỗi: %+v", b)
+	}
+	got := rec.statuses()
+	if !isSubsequence(got, []api.BookStatus{api.StatusRunning, api.StatusQueued, api.StatusRunning, api.StatusCompleted}) {
+		t.Fatalf("chuỗi status = %v", got)
+	}
+	if slices.Contains(got, api.StatusWaitingReview) {
+		t.Fatalf("truyện auto bị cắt không được chuyển sang chờ duyệt: %v", got)
+	}
+	if starts := chapterStarts(rec); !maps.Equal(starts, map[int]int{1: 1, 2: 1, 3: 1}) {
+		t.Fatalf("mỗi chương phải viết đúng một lần, không bỏ chương dở: %v", starts)
+	}
+	if mode := advanceModeOf(t, pool, long); mode != api.AdvanceAuto {
+		t.Fatalf("chế độ của truyện phải giữ auto, got %q", mode)
+	}
+}
+
+// Hết thời gian ân hạn mà chương chưa xong: dừng hẳn như khi không có ân hạn,
+// chương dở được viết lại ở lượt sau.
+func TestSliceGraceExpiredTerminates(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: "[fake:slow] chương rất dài"})
+	waiting := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] user khác đang chờ"})
+	sup := newSupervisor(t, pool, func(c *Config) {
+		c.MaxJobs = 1
+		c.MaxRun = 500 * time.Millisecond
+		c.SliceGrace = 300 * time.Millisecond
+	})
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+
+	waitBook(t, pool, waiting, api.StatusCompleted)
+	waitFor(t, "lượt sau viết lại chương bị cắt dở", func() bool { return chapterStarts(rec)[1] == 2 })
+	if b := mustBook(t, pool, long); b.ResumeFailures != 0 || b.LastError != "" {
+		t.Fatalf("bị cắt không được tính lỗi: %+v", b)
+	}
+	if !isSubsequence(rec.statuses(), []api.BookStatus{api.StatusRunning, api.StatusQueued, api.StatusRunning}) {
+		t.Fatalf("chuỗi status = %v", rec.statuses())
+	}
+}
+
+// User bấm tạm dừng trong lúc worker đang chờ tới ranh giới chương: giữ paused,
+// không bị lượt cắt đưa về hàng đợi.
+func TestPauseWhileSlicingKeepsPaused(t *testing.T) {
+	pool := dbtest.New(t)
+	uidA, kidA := newUser(t, pool)
+	uidB, kidB := newUser(t, pool)
+	long := insertBook(t, pool, uidA, kidA, bookFix{action: api.ActionStart, text: "[fake:slow] chương rất dài"})
+	waiting := insertBook(t, pool, uidB, kidB, bookFix{action: api.ActionStart, text: "[fake:fast] user khác đang chờ"})
+	sup := newSupervisor(t, pool, func(c *Config) { c.MaxJobs = 1; c.MaxRun = 500 * time.Millisecond; c.SliceGrace = time.Minute })
+	rec := record(t, sup.Hubs().Get(long).Subscribe())
+	start(t, sup)
+
+	waitFor(t, "lượt chạy bị cắt", func() bool { return sup.IsSliced(long) })
+	abortBook(t, sup, long)
+	b := waitBook(t, pool, long, api.StatusPaused)
+	if b.StopReason != api.StopUser {
+		t.Fatalf("tạm dừng phải ghi stop_reason user: %+v", b)
+	}
+	waitBook(t, pool, waiting, api.StatusCompleted)
+	if b := mustBook(t, pool, long); b.Status != api.StatusPaused {
+		t.Fatalf("truyện user đã tạm dừng không được tự chạy lại: %s", b.Status)
+	}
+	if slices.Contains(rec.statuses(), api.StatusQueued) {
+		t.Fatalf("tạm dừng trong lúc cắt không được về hàng đợi: %v", rec.statuses())
 	}
 }

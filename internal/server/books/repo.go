@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/voocel/ainovel-cli/internal/entry/worker"
 	"github.com/voocel/ainovel-cli/internal/server/api"
 )
 
@@ -49,6 +50,7 @@ func scanBook(row pgx.Row) (bookRow, error) {
 		return bookRow{}, err
 	}
 	b.Status = api.BookStatus(status)
+	b.Subscription = worker.IsSubscription(b.Provider)
 	// Với start, pending_text là prompt của truyện chứ không phải góp ý.
 	if b.PendingAction != api.ActionSteer {
 		b.PendingText = ""
@@ -87,10 +89,11 @@ func (r *Repo) Get(ctx context.Context, userID, id string) (bookRow, error) {
 		WHERE id::text = $2 AND user_id = $1 AND status <> 'deleting'`, userID, id))
 }
 
-// Count đếm truyện của user (kể cả đang xoá, vì thư mục còn trên đĩa).
+// Count đếm truyện của user, bỏ truyện đang xoá: user vừa xoá thì tạo mới được ngay.
+// Thư mục của truyện đang xoá còn trên đĩa vài giây; đĩa đã có chặn riêng khi sắp đầy.
 func (r *Repo) Count(ctx context.Context, userID string) (int, error) {
 	var n int
-	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM books WHERE user_id = $1`, userID).Scan(&n)
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM books WHERE user_id = $1 AND status <> 'deleting'`, userID).Scan(&n)
 	return n, err
 }
 

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"strings"
 	"testing"
 	"time"
@@ -84,8 +85,66 @@ func TestLimiter(t *testing.T) {
 	}
 }
 
-func TestInviteCodeNormalization(t *testing.T) {
-	if string(HashInviteCode("abcd-efgh")) != string(HashInviteCode(" ABCD EFGH ")) {
-		t.Fatal("mã mời phải chuẩn hoá hoa thường/gạch/khoảng trắng")
+func TestLimiterPerDay(t *testing.T) {
+	l := NewLimiterPer(10, 24*time.Hour)
+	now := time.Unix(1000, 0)
+	l.now = func() time.Time { return now }
+	for i := 0; i < 10; i++ {
+		if ok, _ := l.Allow("ip"); !ok {
+			t.Fatalf("lượt %d phải qua", i)
+		}
 	}
+	if ok, wait := l.Allow("ip"); ok || wait < time.Hour {
+		t.Fatalf("lượt 11 phải bị chặn, chờ hàng giờ: %v %v", ok, wait)
+	}
+	// Nhàn rỗi 11 phút: limiter theo phút sẽ dọn entry, limiter theo ngày thì không.
+	now = now.Add(11 * time.Minute)
+	l.Sweep()
+	if len(l.entries) != 1 {
+		t.Fatalf("entry theo ngày không được bị dọn sau 11 phút: %d", len(l.entries))
+	}
+	if ok, _ := l.Allow("ip"); ok {
+		t.Fatal("sau 11 phút vẫn phải bị chặn")
+	}
+	now = now.Add(25 * time.Hour)
+	l.Sweep()
+	if len(l.entries) != 0 {
+		t.Fatalf("nhàn rỗi quá một ngày phải bị dọn: %d", len(l.entries))
+	}
+}
+
+// Map đầy: limiter theo phút từ chối khoá mới; limiter theo ngày bỏ khoá cũ nhất
+// để khoá mới vẫn qua, còn khoá vừa dùng giữ nguyên số lượt đã tiêu.
+func TestLimiterFullMap(t *testing.T) {
+	now := time.Unix(1000, 0)
+	minute := NewLimiter(5)
+	minute.now = func() time.Time { return now }
+	minute.max = 2
+	minute.Allow("a")
+	minute.Allow("b")
+	if ok, _ := minute.Allow("c"); ok {
+		t.Fatal("limiter theo phút đầy map phải từ chối khoá mới")
+	}
+
+	day := NewLimiterPer(1, 24*time.Hour)
+	day.now = func() time.Time { return now }
+	day.max = 2
+	day.Allow("cu")
+	now = now.Add(time.Minute)
+	day.Allow("moi")
+	now = now.Add(time.Minute)
+	if ok, _ := day.Allow("ip-moi"); !ok {
+		t.Fatal("limiter theo ngày đầy map phải cho khoá mới qua")
+	}
+	if _, kept := day.entries[string(sha256Key("moi"))]; !kept {
+		t.Fatal("khoá vừa dùng không được bị bỏ")
+	}
+	if ok, _ := day.Allow("moi"); ok {
+		t.Fatal("khoá vừa dùng vẫn phải giữ số lượt đã tiêu")
+	}
+}
+
+func sha256Key(s string) []byte {
+	sum := sha256.Sum256([]byte(s))
+	return sum[:]
 }

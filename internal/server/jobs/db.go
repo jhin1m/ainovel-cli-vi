@@ -29,21 +29,27 @@ type jobDB struct {
 }
 
 // queuedIDs trả về truyện đang chờ chạy theo thứ tự đến trước.
-func (d jobDB) queued(ctx context.Context) ([]struct{ ID, UserID string }, error) {
+func (d jobDB) queued(ctx context.Context) ([]queuedBook, error) {
 	rows, err := d.pool.Query(ctx, `SELECT id::text, user_id::text FROM books WHERE status = 'queued' ORDER BY updated_at LIMIT 200`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []struct{ ID, UserID string }
+	var out []queuedBook
 	for rows.Next() {
-		var r struct{ ID, UserID string }
+		var r queuedBook
 		if err := rows.Scan(&r.ID, &r.UserID); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// deprioritizeQueued đẩy mọi truyện đang chờ của user xuống cuối hàng đợi.
+func (d jobDB) deprioritizeQueued(ctx context.Context, userID string) error {
+	_, err := d.pool.Exec(ctx, `UPDATE books SET updated_at = now() WHERE user_id::text = $1 AND status = 'queued'`, userID)
+	return err
 }
 
 // claim chuyển queued → running. false nếu truyện đã đổi trạng thái trước đó.
@@ -88,6 +94,8 @@ type finishResult struct {
 	// AfterDrain: worker tự dừng trong lúc server đang tắt (drain đã đặt interrupted);
 	// kết quả vẫn được ghi đè lên interrupted.
 	AfterDrain bool
+	// ResumeNext: lượt bị chia lượt cắt — giữ pending (như drain), thiếu thì resume.
+	ResumeNext bool
 }
 
 // finish ghi kết quả. Chỉ áp khi truyện còn running (hoặc interrupted nếu AfterDrain);
@@ -97,12 +105,12 @@ func (d jobDB) finish(ctx context.Context, id string, r finishResult) (bool, err
 		UPDATE books SET
 			status = $2, stop_reason = $3, last_error = $4,
 			snapshot = COALESCE($5::jsonb, snapshot),
-			pending_action = CASE WHEN $6 THEN NULL ELSE pending_action END,
+			pending_action = CASE WHEN $9 THEN COALESCE(pending_action, 'resume') WHEN $6 THEN NULL ELSE pending_action END,
 			pending_text = CASE WHEN $6 THEN NULL ELSE pending_text END,
 			resume_failures = CASE WHEN $7 THEN resume_failures + 1 ELSE 0 END,
 			finished_at = now(), updated_at = now()
 		WHERE id = $1 AND (status = 'running' OR ($8 AND status = 'interrupted'))`,
-		id, string(r.Status), r.StopReason, r.LastError, nullJSON(r.Snapshot), r.ClearPending, r.Failed, r.AfterDrain)
+		id, string(r.Status), r.StopReason, r.LastError, nullJSON(r.Snapshot), r.ClearPending, r.Failed, r.AfterDrain, r.ResumeNext)
 	if err != nil {
 		return false, err
 	}

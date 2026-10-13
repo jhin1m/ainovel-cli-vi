@@ -52,6 +52,9 @@ const (
 	StopNothingToResume = "nothing_to_resume"
 	StopPendingSteer    = "pending_steer" // còn can thiệp chưa xử lý: server phải resume, không advance
 	StopError           = "error"
+	// StopProviderRejected: provider từ chối hẳn (sai gói, hết quota). Server ghi
+	// lời giải thích của worker vào last_error thay cho message chung.
+	StopProviderRejected = "provider_rejected"
 )
 
 // Mã lỗi trong message error của worker.
@@ -63,6 +66,9 @@ const (
 	ErrCodeModelUnpriced   = "model_unpriced"
 	ErrCodeEngine          = "engine"
 	ErrCodeBusy            = "busy"
+	// ErrCodeProviderRejected: message là lời giải thích tiếng Việt dựng từ bảng cố
+	// định của worker (có mã gốc, không chứa body của provider), gửi thẳng cho user.
+	ErrCodeProviderRejected = "provider_rejected"
 )
 
 // AdvanceMode của truyện: auto chạy liên tục, review dừng sau mỗi chương chờ duyệt.

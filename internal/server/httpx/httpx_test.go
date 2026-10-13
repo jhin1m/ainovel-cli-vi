@@ -1,7 +1,11 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -183,5 +187,25 @@ func TestDecodeRejectsUnknownAndHidesValues(t *testing.T) {
 	r = httptest.NewRequest("POST", "/", strings.NewReader(`{"email":123}`))
 	if err := Decode(r, &v); err == nil || !strings.Contains(err.Error(), "email") {
 		t.Fatalf("sai kiểu phải nêu field: %v", err)
+	}
+}
+
+// Client huỷ request thì không ghi log ERROR (gây nhiễu khi vận hành); lỗi thật vẫn ghi ERROR.
+func TestWriteErrQuietWhenClientCanceled(t *testing.T) {
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx := context.WithValue(context.Background(), ctxLogger, logger)
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	rec := httptest.NewRecorder()
+	WriteErr(rec, httptest.NewRequest("GET", "/", nil).WithContext(canceled), fmt.Errorf("đọc truyện: %w", context.Canceled))
+	if rec.Code != http.StatusInternalServerError || strings.Contains(buf.String(), "level=ERROR") {
+		t.Fatalf("client huỷ: status %d, log %q", rec.Code, buf.String())
+	}
+
+	WriteErr(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil).WithContext(ctx), errors.New("db hỏng"))
+	if !strings.Contains(buf.String(), "level=ERROR") {
+		t.Fatalf("lỗi thật phải ghi ERROR: %q", buf.String())
 	}
 }

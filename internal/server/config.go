@@ -21,6 +21,12 @@ type Limits struct {
 	MaxSSEPerUser    int     // kết nối SSE mỗi user
 	MaxSSETotal      int     // kết nối SSE toàn server
 	MaxExports       int     // export chạy đồng thời toàn server
+	// MaxRunMinutes: lượt chạy lâu hơn mức này nhường slot khi server hết slot và
+	// có truyện của user khác đang chờ; 0 = tắt.
+	MaxRunMinutes int
+	// SliceGraceMinutes: lượt bị cắt được viết nốt chương đang dở trong chừng này
+	// rồi mới nhường slot; 0 = dừng ngay, bỏ chương dở.
+	SliceGraceMinutes int
 }
 
 // Config là cấu hình của `ainovel-cli serve`. Secret (DB URL, master key) chỉ
@@ -125,6 +131,22 @@ func (c *Config) addWarning(w string) {
 	}
 }
 
+// maxMinutesCap: trần của các env tính bằng phút (một tuần), tránh tràn số khi đổi sang time.Duration.
+const maxMinutesCap = 7 * 24 * 60
+
+// envMinutes đọc env số phút trong [0, maxMinutesCap]; rỗng thì lấy def.
+func envMinutes(getenv func(string) string, name string, def int, zeroMeans string) (int, error) {
+	v := strings.TrimSpace(getenv(name))
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > maxMinutesCap {
+		return 0, fmt.Errorf("%s phải là số nguyên từ 0 đến %d (0 = %s)", name, maxMinutesCap, zeroMeans)
+	}
+	return n, nil
+}
+
 func loadLimits(getenv func(string) string) (Limits, error) {
 	var l Limits
 	ints := []struct {
@@ -145,6 +167,13 @@ func loadLimits(getenv func(string) string) (Limits, error) {
 			return Limits{}, err
 		}
 		*it.dst = v
+	}
+	var err error
+	if l.MaxRunMinutes, err = envMinutes(getenv, "AINOVEL_MAX_RUN_MINUTES", 60, "tắt chia lượt"); err != nil {
+		return Limits{}, err
+	}
+	if l.SliceGraceMinutes, err = envMinutes(getenv, "AINOVEL_SLICE_GRACE_MINUTES", 20, "cắt lượt ngay, bỏ chương đang viết dở"); err != nil {
+		return Limits{}, err
 	}
 	budget := strings.TrimSpace(getenv("AINOVEL_MAX_BOOK_BUDGET_USD"))
 	l.MaxBookBudgetUSD = 50

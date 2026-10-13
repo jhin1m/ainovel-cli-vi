@@ -1,5 +1,5 @@
 // Package auth xử lý tài khoản: mật khẩu argon2id, session phía server, đăng ký
-// bằng invite code, rate limit đăng nhập.
+// tự do bằng email, rate limit đăng ký/đăng nhập.
 package auth
 
 import (

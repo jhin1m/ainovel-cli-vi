@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/voocel/ainovel-cli/internal/models"
-	"github.com/voocel/ainovel-cli/internal/server/admin"
 	"github.com/voocel/ainovel-cli/internal/server/db/dbtest"
 	"github.com/voocel/ainovel-cli/internal/server/keys"
 )
@@ -56,13 +55,23 @@ type testEnv struct {
 // newTestEnv dựng server thật trên Postgres test riêng, chế độ dev (cookie không Secure).
 func newTestEnv(t *testing.T, mutate func(*Config)) *testEnv {
 	t.Helper()
+	return newTestEnvOpts(t, mutate, nil)
+}
+
+// newTestEnvOpts như newTestEnv, cho sửa thêm Options (vd. hàm đo dung lượng đĩa).
+func newTestEnvOpts(t *testing.T, mutate func(*Config), mutateOpts func(*Options)) *testEnv {
+	t.Helper()
 	cfg := testConfig(t)
 	cfg.Dev = true
 	cfg.DatabaseURL = dbtest.NewURL(t)
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	s, err := New(context.Background(), cfg, Options{Version: "test", Dist: testDist(), Catalog: keys.NewCatalog(models.NewModelRegistry())})
+	opts := Options{Version: "test", Dist: testDist(), Catalog: keys.NewCatalog(models.NewModelRegistry())}
+	if mutateOpts != nil {
+		mutateOpts(&opts)
+	}
+	s, err := New(context.Background(), cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,15 +81,6 @@ func newTestEnv(t *testing.T, mutate func(*Config)) *testEnv {
 		s.shutdownRest(context.Background())
 	})
 	return &testEnv{t: t, srv: s, ts: ts}
-}
-
-func (e *testEnv) invite(uses int) string {
-	e.t.Helper()
-	code, err := admin.CreateInvite(context.Background(), e.srv.pool, uses, 0)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	return code
 }
 
 // client là một trình duyệt giả: có cookie jar, gửi JSON same-origin.
@@ -148,10 +148,10 @@ func (c *client) do(method, path string, body any) response {
 }
 
 // signup đăng ký và đăng nhập (cookie lưu trong jar).
-func (c *client) signup(invite, email, password string) {
+func (c *client) signup(email, password string) {
 	c.t.Helper()
 	r := c.do("POST", "/api/auth/signup", map[string]string{
-		"email": email, "password": password, "display_name": strings.Split(email, "@")[0], "invite_code": invite,
+		"email": email, "password": password, "display_name": strings.Split(email, "@")[0],
 	})
 	if r.status != http.StatusCreated {
 		c.t.Fatalf("signup %s: %d %s", email, r.status, r.body)

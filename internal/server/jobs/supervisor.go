@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/voocel/ainovel-cli/internal/entry/worker"
 	"github.com/voocel/ainovel-cli/internal/server/api"
 )
 
@@ -26,7 +27,7 @@ type KeySource interface {
 
 // PricingSource cho giá model gửi kèm init.
 type PricingSource interface {
-	PricingFor(model string) (api.ModelPricing, bool)
+	PricingFor(provider, model string) (api.ModelPricing, bool)
 }
 
 // Config cấu hình supervisor.
@@ -39,6 +40,12 @@ type Config struct {
 	WorkerArgs     []string // tham số sau "worker" (chỉ dùng cho worker giả ở dev/test)
 	Language       string
 	StopGrace      time.Duration // mỗi bước dừng worker chờ bao lâu; 0 = 10s
+	// MaxRun: lượt chạy lâu hơn mức này phải nhường slot khi server hết slot và có
+	// truyện của user khác đang chờ chạy được ngay; 0 = tắt.
+	MaxRun time.Duration
+	// SliceGrace: lượt bị cắt được viết nốt chương đang dở trong chừng này rồi mới
+	// nhường slot; quá hạn thì dừng hẳn. 0 = dừng hẳn ngay (bỏ chương dở).
+	SliceGrace time.Duration
 }
 
 // Supervisor giữ map bookID → process đang sống và chạy vòng lập lịch.
@@ -139,18 +146,25 @@ func (s *Supervisor) schedule(ctx context.Context) error {
 	now := time.Now()
 	for _, q := range queued {
 		s.mu.Lock()
-		if s.draining || len(s.procs) >= s.cfg.MaxJobs {
+		if s.draining {
 			s.mu.Unlock()
 			return nil
 		}
-		_, live := s.procs[q.ID]
-		blocked := live || s.perUser[q.UserID] >= s.cfg.MaxJobsPerUser || now.Before(s.backoff[q.ID].until)
-		if blocked {
+		if len(s.procs) >= s.cfg.MaxJobs {
+			victim := s.sliceVictimLocked(queued, now)
+			s.mu.Unlock()
+			if victim != nil {
+				return s.slice(ctx, victim)
+			}
+			return nil
+		}
+		if s.blockedLocked(q.ID, q.UserID, now) {
 			s.mu.Unlock()
 			continue
 		}
 		// Giữ chỗ trước khi claim để vòng sau không spawn chồng.
 		p := newProc(q.ID, q.UserID, s.hubs.Get(q.ID))
+		p.started = now
 		s.procs[q.ID] = p
 		s.perUser[q.UserID]++
 		s.mu.Unlock()
@@ -173,6 +187,91 @@ func (s *Supervisor) schedule(ctx context.Context) error {
 		}()
 	}
 	return nil
+}
+
+// queuedBook là một truyện đang chờ chạy.
+type queuedBook = struct{ ID, UserID string }
+
+// blockedLocked báo truyện đang chờ chưa chạy ngay được: đã có process, user đã
+// chạm trần worker, hoặc đang backoff. Lập lịch và chia lượt dùng chung điều kiện
+// này để không lệch nhau. Gọi khi đang giữ s.mu.
+func (s *Supervisor) blockedLocked(bookID, userID string, now time.Time) bool {
+	_, live := s.procs[bookID]
+	return live || s.perUser[userID] >= s.cfg.MaxJobsPerUser || now.Before(s.backoff[bookID].until)
+}
+
+// sliceVictimLocked chọn worker phải nhường slot, nil nếu không cần cắt. Chỉ cắt
+// khi đủ cả ba điều kiện: server đã hết slot (phía gọi kiểm), lượt chạy quá
+// MaxRun, và có truyện của user khác chờ chạy được ngay. Mỗi lúc chỉ cắt một
+// worker: worker đang bị cắt còn giữ slot tới khi thoát hẳn, cắt thêm là thừa.
+// Gọi khi đang giữ s.mu.
+func (s *Supervisor) sliceVictimLocked(queued []queuedBook, now time.Time) *proc {
+	if s.cfg.MaxRun <= 0 {
+		return nil
+	}
+	var victim *proc
+	for _, p := range s.procs {
+		if p.sliced.Load() {
+			return nil
+		}
+		if p.stopping.Load() || now.Sub(p.started) < s.cfg.MaxRun || !p.isReady() {
+			continue
+		}
+		if victim != nil && !p.started.Before(victim.started) {
+			continue
+		}
+		if s.hasRunnableOtherLocked(queued, p.userID, now) {
+			victim = p
+		}
+	}
+	return victim
+}
+
+// hasRunnableOtherLocked: có truyện chờ của user khác userID chạy được ngay.
+func (s *Supervisor) hasRunnableOtherLocked(queued []queuedBook, userID string, now time.Time) bool {
+	for _, q := range queued {
+		if q.UserID != userID && !s.blockedLocked(q.ID, q.UserID, now) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSliced báo truyện đang có worker bị cắt lượt, chưa thoát hẳn.
+func (s *Supervisor) IsSliced(bookID string) bool {
+	p := s.live(bookID)
+	return p != nil && p.sliced.Load()
+}
+
+// slice yêu cầu worker dừng để nhường slot. Trước đó đẩy mọi truyện đang chờ
+// của cùng user xuống cuối hàng: nếu không, user vừa được nhả trần sẽ lấy lại
+// chính slot đó bằng truyện khác của mình. outcome() đưa truyện về cuối hàng
+// đợi, không tính là lỗi.
+func (s *Supervisor) slice(ctx context.Context, p *proc) error {
+	if err := s.db.deprioritizeQueued(ctx, p.userID); err != nil {
+		return err
+	}
+	p.sliced.Store(true)
+	logProc(p).Info("lượt chạy quá thời gian, nhường slot cho truyện đang chờ", "max_run", s.cfg.MaxRun, "grace", s.cfg.SliceGrace)
+	go s.sliceAtChapterBoundary(p)
+	return nil
+}
+
+// sliceAtChapterBoundary để worker viết xong chương đang dở rồi mới nhả slot: bỏ
+// chương giữa chừng là bắt user trả token hai lần. Quá SliceGrace mà chưa tới
+// ranh giới chương, hoặc worker không nhận lệnh, thì dừng hẳn như cũ.
+func (s *Supervisor) sliceAtChapterBoundary(p *proc) {
+	if s.cfg.SliceGrace > 0 && p.stopAtChapterBoundary(s.nextID()) {
+		t := time.NewTimer(s.cfg.SliceGrace)
+		defer t.Stop()
+		select {
+		case <-p.done:
+			return
+		case <-t.C:
+			logProc(p).Info("chưa tới ranh giới chương sau thời gian ân hạn, dừng hẳn worker", "grace", s.cfg.SliceGrace)
+		}
+	}
+	p.terminate(s.cfg.StopGrace)
 }
 
 // release bỏ process khỏi bảng theo dõi và đánh thức lập lịch.
@@ -231,6 +330,9 @@ func (s *Supervisor) run(p *proc, row jobRow) {
 	defer p.markDone()
 	log := logProc(p)
 	ctx := context.Background()
+	p.mmu.Lock()
+	p.mode = row.AdvanceMode
+	p.mmu.Unlock()
 
 	fail := func(msg string, err error) {
 		if err != nil {
@@ -410,9 +512,14 @@ func (s *Supervisor) sendInit(ctx context.Context, p *proc, row jobRow, bookDir 
 		return initError{"API key của truyện không còn dùng được (đã bị xoá?). Hãy chọn key khác rồi thử lại."}
 	}
 	defer clear(key)
-	pricing, ok := s.pricing.PricingFor(row.Model)
+	pricing, ok := s.pricing.PricingFor(provider, row.Model)
 	if !ok {
 		return initError{"Model của truyện hiện không có bảng giá nên không thể chạy có giới hạn ngân sách."}
+	}
+	// Gói thuê bao không có ngân sách USD: worker từ chối init có budget khác 0.
+	budget := row.BudgetUSD
+	if worker.IsSubscription(provider) {
+		budget = 0
 	}
 	init := api.WorkerInit{
 		Type: api.MsgInit, Protocol: api.WorkerProtocol, Action: row.Action,
@@ -420,7 +527,7 @@ func (s *Supervisor) sendInit(ctx context.Context, p *proc, row jobRow, bookDir 
 		LLM:       api.WorkerLLM{Provider: provider, Model: row.Model, APIKey: string(key)},
 		Pricing:   &pricing,
 		Language:  s.cfg.Language,
-		BudgetUSD: row.BudgetUSD,
+		BudgetUSD: budget,
 	}
 	switch row.Action {
 	case api.ActionStart:
@@ -474,6 +581,9 @@ func (s *Supervisor) Command(ctx context.Context, bookID string, cmd api.WorkerC
 		return nil, ErrNotRunning
 	}
 	cmd.ID = s.nextID()
+	if cmd.Type == api.MsgSetAdvanceMode {
+		return p.setAdvanceMode(ctx, cmd)
+	}
 	return p.command(ctx, cmd)
 }
 

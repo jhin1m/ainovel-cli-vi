@@ -23,42 +23,45 @@ func NewCatalog(reg *models.ModelRegistry) *Catalog {
 	return &Catalog{reg: reg}
 }
 
-// StartRefresh nạp giá (cache trên đĩa 24h) lúc khởi động và kiểm lại mỗi 12h
-// (nhịp ngắn hơn TTL để cache không sống tới gần 48h).
-func (c *Catalog) StartRefresh(ctx context.Context, cacheDir string) {
-	models.StartPricingRefresh(c.reg, cacheDir)
-	go func() {
-		t := time.NewTicker(12 * time.Hour)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				slog.Info("làm mới bảng giá model")
-				models.StartPricingRefresh(c.reg, cacheDir)
-			}
+// RefreshLoop nạp giá (cache trên đĩa 24h) ngay rồi kiểm lại mỗi 12h (nhịp ngắn
+// hơn TTL để cache không sống tới gần 48h). Chặn tới khi ctx huỷ; khi trả về thì
+// không còn lượt làm mới nào ghi vào cacheDir.
+func (c *Catalog) RefreshLoop(ctx context.Context, cacheDir string) {
+	models.RefreshPricing(ctx, c.reg, cacheDir)
+	t := time.NewTicker(12 * time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			slog.Info("làm mới bảng giá model")
+			models.RefreshPricing(ctx, c.reg, cacheDir)
 		}
-	}()
+	}
 }
 
 // Providers trả về mọi provider được phép kèm model có giá.
 func (c *Catalog) Providers() []api.ProviderInfo {
 	out := []api.ProviderInfo{}
 	for _, p := range worker.Providers() {
-		info := api.ProviderInfo{Name: p.Name, Label: p.Label, Models: []api.ModelOption{}}
+		info := api.ProviderInfo{Name: p.Name, Label: p.Label, Subscription: p.Subscription, Models: []api.ModelOption{}}
 		for _, id := range curatedModels[p.Name] {
-			entry, ok := c.resolve(id)
+			pr, ok := c.PricingFor(p.Name, id)
 			if !ok {
 				continue
 			}
-			name := entry.Name
+			name := pr.Name
+			if override, ok := displayNames[p.Name][id]; ok {
+				name = override
+			}
 			if name == "" {
 				name = id
 			}
 			info.Models = append(info.Models, api.ModelOption{
-				ID: id, Name: name, ContextWindow: entry.ContextWindow,
-				InputCostPer1M: entry.InputCostPer1M, OutputCostPer1M: entry.OutputCostPer1M,
+				ID: id, Name: name, ContextWindow: pr.ContextWindow,
+				InputCostPer1M: pr.InputCostPer1M, OutputCostPer1M: pr.OutputCostPer1M,
+				Recommended: recommendedModels[p.Name] == id,
 			})
 		}
 		out = append(out, info)
@@ -79,18 +82,24 @@ func (c *Catalog) Allowed(provider, model string) bool {
 }
 
 // PricingFor trả về giá gửi kèm init cho worker. Cùng phép Resolve mà worker dùng
-// để kiểm, nên mục giá luôn khớp đúng model.
-func (c *Catalog) PricingFor(model string) (api.ModelPricing, bool) {
+// để kiểm, nên mục giá luôn khớp đúng model. Provider có giá riêng (priceOverrides)
+// thay phần giá, giữ Provider/ID của mục registry.
+func (c *Catalog) PricingFor(provider, model string) (api.ModelPricing, bool) {
 	e, ok := c.resolve(model)
 	if !ok {
 		return api.ModelPricing{}, false
 	}
-	return api.ModelPricing{
+	pr := api.ModelPricing{
 		Provider: e.Provider, ID: e.ID, Name: e.Name,
 		ContextWindow: e.ContextWindow, MaxTokens: e.MaxTokens,
 		InputCostPer1M: e.InputCostPer1M, OutputCostPer1M: e.OutputCostPer1M,
 		CacheReadCostPer1M: e.CacheReadCostPer1M, CacheWriteCostPer1M: e.CacheWriteCostPer1M,
-	}, true
+	}
+	if o, ok := priceOverrides[provider][model]; ok {
+		pr.InputCostPer1M, pr.OutputCostPer1M = o.InputCostPer1M, o.OutputCostPer1M
+		pr.CacheReadCostPer1M, pr.CacheWriteCostPer1M = o.CacheReadCostPer1M, o.CacheWriteCostPer1M
+	}
+	return pr, true
 }
 
 // resolve tìm mục giá và bắt buộc trùng đúng mã model (Resolve của registry có

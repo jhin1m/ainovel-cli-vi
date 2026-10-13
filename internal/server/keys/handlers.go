@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -17,6 +18,11 @@ const (
 	maxLabelLen  = 60
 	minAPIKeyLen = 8
 	maxAPIKeyLen = 512
+
+	// maxKeysPerUser và createsPerDay chặn lạm dụng khi thêm key không cần
+	// nhập lại mật khẩu: mỗi key là một bản mã lưu lâu dài trong DB.
+	maxKeysPerUser = 20
+	createsPerDay  = 30
 )
 
 // InUseChecker báo key còn đang được một truyện đang chạy dùng (nối ở phase books).
@@ -28,17 +34,31 @@ type Handlers struct {
 	catalog *Catalog
 	auth    *auth.Service
 	inUse   InUseChecker
+
+	createLimiter *auth.Limiter // tạo key theo user, cửa sổ một ngày
+	check         *keyChecker   // POST /api/keys/test
 }
 
 // NewHandlers tạo handlers. inUse có thể nil.
 func NewHandlers(repo *Repo, catalog *Catalog, authSvc *auth.Service, inUse InUseChecker) *Handlers {
-	return &Handlers{repo: repo, catalog: catalog, auth: authSvc, inUse: inUse}
+	return &Handlers{
+		repo: repo, catalog: catalog, auth: authSvc, inUse: inUse,
+		createLimiter: auth.NewLimiterPer(createsPerDay, 24*time.Hour),
+		check:         newKeyChecker(),
+	}
+}
+
+// SweepLimiters dọn rate limiter; gọi định kỳ.
+func (h *Handlers) SweepLimiters() {
+	h.createLimiter.Sweep()
+	h.check.sweep()
 }
 
 // Register gắn route vào mux API; mọi route yêu cầu đăng nhập.
 func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/keys", h.auth.RequireUser(http.HandlerFunc(h.handleList)))
 	mux.Handle("POST /api/keys", h.auth.RequireUser(http.HandlerFunc(h.handleCreate)))
+	mux.Handle("POST /api/keys/test", h.auth.RequireUser(http.HandlerFunc(h.handleTest)))
 	mux.Handle("DELETE /api/keys/{id}", h.auth.RequireUser(http.HandlerFunc(h.handleDelete)))
 	mux.Handle("GET /api/providers", h.auth.RequireUser(http.HandlerFunc(h.handleProviders)))
 }
@@ -86,12 +106,15 @@ func (h *Handlers) handleCreate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_label", "Nhãn tối đa 60 ký tự")
 		return
 	}
-	// Nhập lại mật khẩu: phiên bị lộ (XSS, máy dùng chung) không thêm được key lạ.
-	if err := h.auth.VerifyUserPassword(r.Context(), u.ID, req.CurrentPassword); err != nil {
-		httpx.WriteErr(w, r, err)
+	if ok, wait := h.createLimiter.Allow(u.ID); !ok {
+		httpx.WriteErr(w, r, httpx.TooManyToday(wait))
 		return
 	}
-	k, err := h.repo.Create(r.Context(), u.ID, req.Provider, label, req.APIKey)
+	k, err := h.repo.Create(r.Context(), u.ID, req.Provider, label, req.APIKey, maxKeysPerUser)
+	if errors.Is(err, ErrKeyLimit) {
+		httpx.WriteError(w, http.StatusConflict, "key_limit", "Đã đạt tối đa 20 key. Xoá key không dùng rồi thử lại.")
+		return
+	}
 	if err != nil {
 		httpx.WriteErr(w, r, err)
 		return

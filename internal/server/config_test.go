@@ -45,7 +45,8 @@ func TestLoadConfigFromFiles(t *testing.T) {
 		t.Fatalf("mặc định sai: %+v", cfg)
 	}
 	if len(cfg.TrustedProxies) != 2 || cfg.Limits.MaxJobs != 8 || cfg.Limits.MaxJobsPerUser != 1 ||
-		cfg.Limits.MaxBooksPerUser != 20 || cfg.Limits.MaxBookBudgetUSD != 50 || cfg.Limits.MaxExports != 2 {
+		cfg.Limits.MaxBooksPerUser != 20 || cfg.Limits.MaxBookBudgetUSD != 50 || cfg.Limits.MaxExports != 2 ||
+		cfg.Limits.MaxRunMinutes != 60 || cfg.Limits.SliceGraceMinutes != 20 {
 		t.Fatalf("giới hạn sai: %+v %+v", cfg.TrustedProxies, cfg.Limits)
 	}
 	if len(cfg.Warnings) != 0 {
@@ -68,6 +69,12 @@ func TestLoadConfigErrors(t *testing.T) {
 		"master key ngắn":               {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": writeSecret(t, dir, "short", "YWJj", 0o600)},
 		"trusted proxies sai":           {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_TRUSTED_PROXIES": "abc"},
 		"giới hạn âm":                   {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_MAX_JOBS": "-1"},
+		"chia lượt âm":                  {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_MAX_RUN_MINUTES": "-5"},
+		"chia lượt không phải số":       {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_MAX_RUN_MINUTES": "1h"},
+		"chia lượt quá trần":            {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_MAX_RUN_MINUTES": "99999999999"},
+		"ân hạn cắt lượt âm":            {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_SLICE_GRACE_MINUTES": "-1"},
+		"ân hạn cắt lượt không phải số": {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_SLICE_GRACE_MINUTES": "20m"},
+		"ân hạn cắt lượt quá trần":      {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_SLICE_GRACE_MINUTES": "10081"},
 		"public url không phải http(s)": {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_PUBLIC_URL": "ftp://x"},
 		"public url có đường dẫn":       {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_MASTER_KEY_FILE": mk, "AINOVEL_PUBLIC_URL": "https://x.vn/app"},
 		"DB env kèm file ngoài dev":     {"AINOVEL_DATABASE_URL_FILE": db, "AINOVEL_DATABASE_URL": "postgres://x", "AINOVEL_MASTER_KEY_FILE": mk},
@@ -79,6 +86,28 @@ func TestLoadConfigErrors(t *testing.T) {
 				t.Fatal("phải lỗi")
 			}
 		})
+	}
+}
+
+func TestLoadConfigMaxRunMinutes(t *testing.T) {
+	dir := t.TempDir()
+	base := map[string]string{
+		"AINOVEL_DATABASE_URL_FILE": writeSecret(t, dir, "db", "postgres://u:p@h/db", 0o600),
+		"AINOVEL_MASTER_KEY_FILE":   writeSecret(t, dir, "mk", testMasterKeyB64(), 0o600),
+	}
+	for v, want := range map[string]int{"0": 0, "15": 15} {
+		base["AINOVEL_MAX_RUN_MINUTES"] = v
+		cfg, err := LoadConfig(envMap(base))
+		if err != nil || cfg.Limits.MaxRunMinutes != want {
+			t.Fatalf("AINOVEL_MAX_RUN_MINUTES=%s: %d, %v", v, cfg.Limits.MaxRunMinutes, err)
+		}
+	}
+	for v, want := range map[string]int{"0": 0, "5": 5} {
+		base["AINOVEL_SLICE_GRACE_MINUTES"] = v
+		cfg, err := LoadConfig(envMap(base))
+		if err != nil || cfg.Limits.SliceGraceMinutes != want {
+			t.Fatalf("AINOVEL_SLICE_GRACE_MINUTES=%s: %d, %v", v, cfg.Limits.SliceGraceMinutes, err)
+		}
 	}
 }
 

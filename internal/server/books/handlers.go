@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/voocel/ainovel-cli/internal/entry/worker"
 	"github.com/voocel/ainovel-cli/internal/server/api"
 	"github.com/voocel/ainovel-cli/internal/server/auth"
 	"github.com/voocel/ainovel-cli/internal/server/httpx"
@@ -33,6 +34,7 @@ type Limits struct {
 	MaxBookBudgetUSD float64
 	MaxSSEPerUser    int
 	MaxSSETotal      int
+	MinFreeDiskBytes uint64 // dưới mức này không cho tạo truyện mới
 }
 
 // Service gom handler truyện.
@@ -46,6 +48,7 @@ type Service struct {
 	dataDir  string
 	limits   Limits
 	closing  <-chan struct{}
+	diskFree func() (uint64, bool)
 
 	sseMu      sync.Mutex
 	ssePerUser map[string]int
@@ -63,6 +66,9 @@ type Deps struct {
 	DataDir  string
 	Limits   Limits
 	Closing  <-chan struct{} // đóng khi server tắt: SSE tự kết thúc
+	// DiskFree đo dung lượng trống của thư mục dữ liệu; ok = false (không đo được
+	// hoặc nil) thì không chặn tạo truyện.
+	DiskFree func() (free uint64, ok bool)
 }
 
 // NewService tạo service.
@@ -70,6 +76,7 @@ func NewService(d Deps) *Service {
 	return &Service{
 		repo: d.Repo, keys: d.Keys, catalog: d.Catalog, auth: d.Auth, sup: d.Sup,
 		exporter: d.Exporter, dataDir: d.DataDir, limits: d.Limits, closing: d.Closing,
+		diskFree:   d.DiskFree,
 		ssePerUser: make(map[string]int),
 	}
 }
@@ -157,11 +164,24 @@ func (s *Service) validBudget(v float64) error {
 
 func validMode(m string) bool { return m == api.AdvanceAuto || m == api.AdvanceReview }
 
+// diskLow báo thư mục dữ liệu sắp đầy. Không đo được thì coi như còn chỗ.
+func (s *Service) diskLow() bool {
+	if s.diskFree == nil {
+		return false
+	}
+	free, ok := s.diskFree()
+	return ok && free < s.limits.MinFreeDiskBytes
+}
+
 func (s *Service) handleCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context())
 	var req api.CreateBookRequest
 	if err := httpx.Decode(r, &req); err != nil {
 		httpx.WriteErr(w, r, err)
+		return
+	}
+	if s.diskLow() {
+		httpx.WriteErr(w, r, httpx.NewError(http.StatusInsufficientStorage, "disk_full", "Máy chủ sắp hết dung lượng, thử lại sau"))
 		return
 	}
 	prompt := strings.TrimSpace(req.Prompt)
@@ -173,10 +193,6 @@ func (s *Service) handleCreate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, r, badRequest("invalid_advance_mode", "Chế độ viết không hợp lệ"))
 		return
 	}
-	if err := s.validBudget(req.BudgetUSD); err != nil {
-		httpx.WriteErr(w, r, err)
-		return
-	}
 	// Key phải là của chính user (404 nếu không); FK kép trong DB chặn thêm một lớp.
 	key, err := s.keys.Get(r.Context(), u.ID, req.APIKeyID)
 	if errors.Is(err, keys.ErrNotFound) {
@@ -186,6 +202,15 @@ func (s *Service) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.WriteErr(w, r, err)
 		return
+	}
+	// Gói thuê bao không có ngân sách USD: bỏ qua budget_usd của request, lưu 0.
+	budget := 0.0
+	if !worker.IsSubscription(key.Provider) {
+		if err := s.validBudget(req.BudgetUSD); err != nil {
+			httpx.WriteErr(w, r, err)
+			return
+		}
+		budget = req.BudgetUSD
 	}
 	if !s.catalog.Allowed(key.Provider, req.Model) {
 		httpx.WriteErr(w, r, httpx.NewError(http.StatusUnprocessableEntity, "model_not_allowed", "Model này không dùng được với API key đã chọn (cần có bảng giá để giới hạn ngân sách)"))
@@ -202,7 +227,7 @@ func (s *Service) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := s.repo.Create(r.Context(), newBook{
 		UserID: u.ID, APIKeyID: key.ID, Prompt: prompt, Provider: key.Provider,
-		Model: req.Model, AdvanceMode: req.AdvanceMode, BudgetUSD: req.BudgetUSD,
+		Model: req.Model, AdvanceMode: req.AdvanceMode, BudgetUSD: budget,
 	})
 	if err != nil {
 		httpx.WriteErr(w, r, err)
@@ -225,6 +250,10 @@ func (s *Service) handlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	budget, mode, keyID := b.BudgetUSD, b.AdvanceMode, b.APIKeyID
 	if req.BudgetUSD != nil {
+		if b.Subscription {
+			httpx.WriteErr(w, r, badRequest("budget_not_applicable", "Truyện dùng gói thuê bao nên không có ngân sách USD"))
+			return
+		}
 		// Worker chỉ nhận ngân sách lúc khởi động: đổi khi đang chạy sẽ không có hiệu lực.
 		if b.Status == api.StatusQueued || b.Status == api.StatusRunning {
 			httpx.WriteErr(w, r, conflict("book_running", "Hãy tạm dừng truyện trước khi đổi ngân sách"))
@@ -384,6 +413,11 @@ func (s *Service) handlePause(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			s.writeResult(w, r, b.ID, u.ID, false, ack == nil)
 			return
+		}
+		// Worker đang nhường slot (chia lượt): chờ nó thoát, truyện về queued, rồi
+		// huỷ như truyện đang xếp hàng bên dưới.
+		if s.sup.IsSliced(b.ID) {
+			s.sup.StopAndWait(b.ID)
 		}
 	}
 	// Chưa có worker: huỷ lượt đang xếp hàng.

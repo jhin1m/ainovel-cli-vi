@@ -8,6 +8,7 @@
 // Marker trong init.prompt:
 //
 //	[fake:fast]     mỗi chương ~50ms
+//	[fake:slow]     mỗi chương ~6s
 //	[fake:crash]    in vài dòng stderr rồi thoát mã 3, không có message exit
 //	[fake:hang]     bỏ qua shutdown, SIGTERM, EOF stdin (chỉ SIGKILL mới dừng)
 //	[fake:lockbusy] lần chạy đầu báo lock_busy rồi thoát 1, các lần sau chạy bình thường
@@ -82,6 +83,7 @@ type runner struct {
 	runID string
 	evSeq atomic.Int64
 	fast  bool
+	slow  bool
 	cost  float64
 
 	ctx    context.Context // huỷ khi shutdown
@@ -141,6 +143,7 @@ func main() {
 		out: out, dir: cwd, init: init, version: *version,
 		runID: randomID(), ctx: ctx, cancel: cancel,
 		fast: strings.Contains(init.Prompt, "[fake:fast]"),
+		slow: strings.Contains(init.Prompt, "[fake:slow]"),
 		mode: init.AdvanceMode,
 	}
 	if r.mode == "" {
@@ -434,7 +437,8 @@ func (r *runner) writeLoop(oneShot bool) outcome {
 		if next > totalChapters {
 			return r.finishBook()
 		}
-		if r.cost+chapterCostUSD > r.init.BudgetUSD+1e-9 {
+		// Budget 0 = gói thuê bao: không áp ngân sách (khớp budgetExhausted của worker thật).
+		if r.init.BudgetUSD > 0 && r.cost+chapterCostUSD > r.init.BudgetUSD+1e-9 {
 			r.snapshot("stopped", false)
 			return outcome{stop: api.StopBudget}
 		}
@@ -553,7 +557,9 @@ func (r *runner) writeChapter(n int) (bool, outcome) {
 	if saveErr != nil {
 		return false, r.fail(saveErr)
 	}
-	r.cost += chapterCostUSD
+	if r.init.BudgetUSD > 0 { // thuê bao: worker thật báo chi phí USD bằng 0
+		r.cost += chapterCostUSD
+	}
 	if err := r.saveCost(); err != nil {
 		return false, r.fail(err)
 	}
@@ -578,10 +584,13 @@ func (r *runner) persist(n int, text string) error {
 	return r.st.Progress.MarkChapterComplete(n, domain.WordCount(text), "", "")
 }
 
-// step co thời gian chờ khi chạy chế độ nhanh.
+// step co (nhanh) hoặc giãn (chậm) thời gian chờ.
 func (r *runner) step(d time.Duration) time.Duration {
-	if r.fast {
+	switch {
+	case r.fast:
 		return d / 25
+	case r.slow:
+		return d * 5
 	}
 	return d
 }
@@ -604,7 +613,7 @@ func (r *runner) sleep(d time.Duration) bool {
 // ── nội dung giả ──
 
 func cleanPrompt(prompt string) string {
-	for _, m := range []string{"[fake:fast]", "[fake:crash]", "[fake:hang]", "[fake:lockbusy]", "[fake:error]"} {
+	for _, m := range []string{"[fake:fast]", "[fake:slow]", "[fake:crash]", "[fake:hang]", "[fake:lockbusy]", "[fake:error]"} {
 		prompt = strings.ReplaceAll(prompt, m, "")
 	}
 	return strings.Join(strings.Fields(prompt), " ")

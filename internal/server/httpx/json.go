@@ -3,6 +3,7 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,11 @@ func TooManyRequests(wait time.Duration) *Error {
 	return &Error{Status: http.StatusTooManyRequests, Code: "rate_limited", Message: "Thao tác quá nhanh, thử lại sau", RetryAfter: wait}
 }
 
+// TooManyToday là lỗi 429 của giới hạn theo ngày (cùng code rate_limited).
+func TooManyToday(wait time.Duration) *Error {
+	return &Error{Status: http.StatusTooManyRequests, Code: "rate_limited", Message: "Đã đạt giới hạn trong ngày, thử lại sau vài giờ", RetryAfter: wait}
+}
+
 // Các lỗi hay dùng.
 var (
 	ErrNotFound     = NewError(http.StatusNotFound, "not_found", "Không tìm thấy")
@@ -73,7 +79,12 @@ func WriteErr(w http.ResponseWriter, r *http.Request, err error) {
 		WriteError(w, he.Status, he.Code, he.Message)
 		return
 	}
-	LoggerFrom(r.Context()).Error("lỗi xử lý request", "err", err)
+	if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+		// Client đã huỷ request (chuyển trang, đóng tab): không phải lỗi server, chỉ ghi ở mức debug.
+		LoggerFrom(r.Context()).Debug("client huỷ request", "err", err)
+	} else {
+		LoggerFrom(r.Context()).Error("lỗi xử lý request", "err", err)
+	}
 	WriteError(w, ErrInternal.Status, ErrInternal.Code, ErrInternal.Message)
 }
 

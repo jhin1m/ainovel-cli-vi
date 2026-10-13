@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,11 +77,11 @@ func newBookEnv(t *testing.T, mutate func(*Config)) *testEnv {
 	return env
 }
 
-// login đăng ký một user mới bằng invite riêng và trả về client đã có cookie phiên.
+// login đăng ký một user mới và trả về client đã có cookie phiên.
 func (e *testEnv) login(email string) *client {
 	e.t.Helper()
 	c := e.newClient()
-	c.signup(e.invite(1), email, testPassword)
+	c.signup(email, testPassword)
 	return c
 }
 
@@ -94,7 +95,7 @@ func newClientAt(t *testing.T, base string) *client {
 func (c *client) addKey(provider string) api.APIKey {
 	c.t.Helper()
 	r := c.do("POST", "/api/keys", map[string]string{
-		"provider": provider, "label": "thử", "api_key": testLLMKey, "current_password": testPassword,
+		"provider": provider, "label": "thử", "api_key": testLLMKey,
 	})
 	var k api.APIKey
 	r.decode(c.t, &k)
@@ -516,6 +517,61 @@ func TestBookBudget(t *testing.T) {
 	}
 }
 
+// Gói thuê bao (zai-coding): không có ngân sách USD. Request gửi budget nào cũng
+// lưu 0, worker không dừng vì ngân sách, chi phí USD báo về bằng 0.
+func TestBookSubscription(t *testing.T) {
+	env := newBookEnv(t, nil)
+	c := env.login("thuebao@example.com")
+	key := c.addKey("zai-coding")
+
+	var zai api.ProviderInfo
+	var providers []api.ProviderInfo
+	c.do("GET", "/api/providers", nil).decode(t, &providers)
+	for _, p := range providers {
+		if p.Name == "zai-coding" {
+			zai = p
+		}
+	}
+	if !zai.Subscription || len(zai.Models) == 0 {
+		t.Fatalf("/api/providers thiếu zai-coding thuê bao: %+v", zai)
+	}
+	model := zai.Models[0].ID
+
+	// Không gửi budget_usd (0): với provider thường là invalid_budget, với thuê bao thì hợp lệ.
+	b := c.createBook(fastPrompt("Truyện dùng gói thuê bao"), key.ID, model, 0, api.AdvanceAuto)
+	if b.BudgetUSD != 0 || !b.Subscription || b.Provider != "zai-coding" {
+		t.Fatalf("truyện thuê bao sai: %+v", b)
+	}
+	// Budget gửi kèm bị bỏ qua, vẫn lưu 0.
+	b2 := c.createBook(fastPrompt("Truyện thuê bao gửi kèm ngân sách"), key.ID, model, 3, api.AdvanceAuto)
+	if b2.BudgetUSD != 0 || !b2.Subscription {
+		t.Fatalf("budget gửi kèm phải bị bỏ qua: %+v", b2)
+	}
+
+	c.waitStatus(b.ID, api.StatusCompleted)
+	got := c.getBook(b.ID)
+	if got.StopReason == api.StopBudget || got.Snapshot == nil || got.Snapshot.TotalCostUSD != 0 || got.Snapshot.BudgetLimitUSD != 0 {
+		t.Fatalf("thuê bao không được áp ngân sách hay báo chi phí USD: %+v %+v", got, got.Snapshot)
+	}
+	if n := c.chapterCount(b.ID); n != 3 {
+		t.Fatalf("truyện thuê bao phải viết đủ 3 chương, có %d", n)
+	}
+	if r := c.do("PATCH", "/api/books/"+b.ID, api.UpdateBookRequest{BudgetUSD: ptrFloat(2)}); r.status != 400 || r.errCode() != "budget_not_applicable" {
+		t.Fatalf("đổi ngân sách truyện thuê bao phải 400 budget_not_applicable: %d %s", r.status, r.body)
+	}
+	c.waitStatus(b2.ID, api.StatusCompleted)
+
+	// Ràng buộc DB đúng tên và biểu thức như migration 0005.
+	var def string
+	if err := env.srv.pool.QueryRow(context.Background(), `SELECT pg_get_constraintdef(oid) FROM pg_constraint
+		WHERE conrelid = 'books'::regclass AND conname = 'books_budget_usd_check'`).Scan(&def); err != nil {
+		t.Fatal(err)
+	}
+	if def != "CHECK ((budget_usd >= (0)::double precision))" {
+		t.Fatalf("ràng buộc budget sai: %q", def)
+	}
+}
+
 func TestBookValidationAndLimits(t *testing.T) {
 	env := newBookEnv(t, func(c *Config) { c.Limits.MaxBooksPerUser = 1 })
 	c := env.login("an@example.com")
@@ -558,6 +614,47 @@ func TestBookValidationAndLimits(t *testing.T) {
 		t.Fatalf("vượt MaxBooksPerUser phải 409: %d %s", r.status, r.body)
 	}
 	c.waitStatus(b.ID, api.StatusWaitingReview)
+
+	// Truyện đang xoá không chiếm chỗ: giữ trạng thái deleting (như lúc thư mục chưa xoá xong)
+	// thì user vẫn tạo được truyện mới.
+	if _, err := env.srv.pool.Exec(context.Background(), `UPDATE books SET status = 'deleting' WHERE id::text = $1`, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.do("POST", "/api/books", valid); r.status != http.StatusCreated {
+		t.Fatalf("truyện đang xoá không được tính vào MaxBooksPerUser: %d %s", r.status, r.body)
+	}
+}
+
+// Đĩa dưới ngưỡng thì tạo truyện trả 507; không đo được (ok = false) thì không chặn.
+func TestBookCreateBlockedWhenDiskLow(t *testing.T) {
+	var free atomic.Uint64
+	var measurable atomic.Bool
+	measurable.Store(true)
+	env := newTestEnvOpts(t, nil, func(o *Options) {
+		o.DiskFree = func(string) (uint64, bool) { return free.Load(), measurable.Load() }
+	})
+	c := env.login("an@example.com")
+	key := c.addKey("openrouter")
+	req := api.CreateBookRequest{Prompt: "Truyện khi đĩa đầy", APIKeyID: key.ID, Model: testModel, BudgetUSD: 5, AdvanceMode: api.AdvanceReview}
+
+	free.Store(lowDiskBytes - 1)
+	r := c.do("POST", "/api/books", req)
+	if r.status != http.StatusInsufficientStorage || r.errCode() != "disk_full" {
+		t.Fatalf("đĩa dưới ngưỡng phải 507 disk_full: %d %s", r.status, r.body)
+	}
+	if n := len(c.listBooks()); n != 0 {
+		t.Fatalf("507 không được tạo truyện, có %d", n)
+	}
+
+	measurable.Store(false)
+	if r := c.do("POST", "/api/books", req); r.status != http.StatusCreated {
+		t.Fatalf("không đo được dung lượng thì không chặn: %d %s", r.status, r.body)
+	}
+	measurable.Store(true)
+	free.Store(lowDiskBytes)
+	if r := c.do("POST", "/api/books", req); r.status != http.StatusCreated {
+		t.Fatalf("đủ dung lượng phải tạo được: %d %s", r.status, r.body)
+	}
 }
 
 func ptrFloat(v float64) *float64 { return &v }
@@ -801,8 +898,7 @@ func TestBookRestartRecovery(t *testing.T) {
 	}
 	base1, stop1 := serveTest(t, s1)
 	c := newClientAt(t, base1)
-	env := &testEnv{t: t, srv: s1}
-	c.signup(env.invite(1), "an@example.com", testPassword)
+	c.signup("an@example.com", testPassword)
 	key := c.addKey("openrouter")
 	b := c.createBook(slowPrompt, key.ID, testModel, 5, api.AdvanceAuto)
 	c.waitBook(b.ID, "đã viết xong chương đầu", func(bk api.Book) bool {
