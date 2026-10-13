@@ -7,25 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/voocel/ainovel-cli/internal/server/api"
 )
 
 // ErrorBody là định dạng lỗi thống nhất: {"error":{"code":"...","message":"..."}}.
 // message bằng tiếng Việt, hiển thị thẳng cho người dùng.
-type ErrorBody struct {
-	Error ErrorDetail `json:"error"`
-}
-
-type ErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
+type (
+	ErrorBody   = api.ErrorResponse
+	ErrorDetail = api.ErrorDetail
+)
 
 // Error là lỗi nghiệp vụ mang sẵn status HTTP và mã lỗi.
 type Error struct {
-	Status  int
-	Code    string
-	Message string
+	Status     int
+	Code       string
+	Message    string
+	RetryAfter time.Duration // > 0: thêm header Retry-After (429)
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -33,6 +35,11 @@ func (e *Error) Error() string { return e.Code + ": " + e.Message }
 // NewError tạo lỗi nghiệp vụ.
 func NewError(status int, code, message string) *Error {
 	return &Error{Status: status, Code: code, Message: message}
+}
+
+// TooManyRequests là lỗi 429 kèm thời gian nên chờ.
+func TooManyRequests(wait time.Duration) *Error {
+	return &Error{Status: http.StatusTooManyRequests, Code: "rate_limited", Message: "Thao tác quá nhanh, thử lại sau", RetryAfter: wait}
 }
 
 // Các lỗi hay dùng.
@@ -60,6 +67,9 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 func WriteErr(w http.ResponseWriter, r *http.Request, err error) {
 	var he *Error
 	if errors.As(err, &he) {
+		if he.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Max(1, math.Ceil(he.RetryAfter.Seconds())))))
+		}
 		WriteError(w, he.Status, he.Code, he.Message)
 		return
 	}

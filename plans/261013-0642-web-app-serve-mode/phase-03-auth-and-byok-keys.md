@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Auth và BYOK keys"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: [2]
@@ -71,10 +71,10 @@ internal/server/
 
 ## Success Criteria
 
-- [ ] Flow auth chạy; invite hết lượt/hết hạn bị từ chối.
-- [ ] Trong DB key chỉ ở dạng ciphertext; không có trong log/response (test).
-- [ ] Không có đường nào để user dùng hay giải mã key của user khác (test ở đây và phase 4).
-- [ ] Brute-force bị 429; không khoá được tài khoản người khác chỉ bằng cách gửi sai mật khẩu từ IP khác.
+- [x] Flow auth chạy; invite hết lượt/hết hạn bị từ chối.
+- [x] Trong DB key chỉ ở dạng ciphertext; không có trong log/response (test).
+- [x] Không có đường nào để user dùng hay giải mã key của user khác (test ở đây; `DecryptForBook` + FK kép làm ở phase 4 vì cần bảng `books`).
+- [x] Brute-force bị 429; không khoá được tài khoản người khác chỉ bằng cách gửi sai mật khẩu từ IP khác.
 
 ## Risk Assessment
 

@@ -59,7 +59,7 @@ ainovel-cli serve ── Postgres (users, sessions, invites, api_keys, books)
 |---|-------|-----------|--------|--------|
 | 1 | [Worker stdio mode](./phase-01-worker-stdio-mode.md) | — | 2d | Completed |
 | 2 | [Server foundation](./phase-02-server-foundation.md) | — (làm song song với 1 được) | 1d | Completed |
-| 3 | [Auth và BYOK keys](./phase-03-auth-and-byok-keys.md) | 2 | 1d | Pending |
+| 3 | [Auth và BYOK keys](./phase-03-auth-and-byok-keys.md) | 2 | 1d | Completed |
 | 4 | [Supervisor, Books API, SSE](./phase-04-job-supervisor-and-books-api.md) | 1, 3 | 3.5d | Pending |
 | 5 | [Web SPA](./phase-05-web-spa.md) | 4 | 4d | Pending |
 | 6 | [PWA, deploy, docs](./phase-06-pwa-deploy-and-docs.md) | 5 | 1.5d | Pending |

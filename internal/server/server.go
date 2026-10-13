@@ -11,13 +11,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/voocel/ainovel-cli/internal/models"
+	"github.com/voocel/ainovel-cli/internal/server/auth"
 	"github.com/voocel/ainovel-cli/internal/server/db"
 	"github.com/voocel/ainovel-cli/internal/server/httpx"
+	"github.com/voocel/ainovel-cli/internal/server/keys"
+	"github.com/voocel/ainovel-cli/internal/server/secret"
 	"github.com/voocel/ainovel-cli/web"
 )
 
@@ -38,6 +43,14 @@ type Server struct {
 	root *http.ServeMux
 	api  *http.ServeMux
 
+	auth    *auth.Service
+	keyRepo *keys.Repo
+	catalog *keys.Catalog
+
+	// bgCtx sống suốt đời server; huỷ khi tắt để dừng các việc nền.
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
+
 	// closing đóng khi bắt đầu tắt: SSE và việc chạy dài lắng nghe để tự kết thúc.
 	closing     chan struct{}
 	closingOnce sync.Once
@@ -51,7 +64,8 @@ type Server struct {
 // Options cho New.
 type Options struct {
 	Version string
-	Dist    fs.FS // nil = SPA nhúng trong binary
+	Dist    fs.FS         // nil = SPA nhúng trong binary
+	Catalog *keys.Catalog // nil = registry giá mặc định
 }
 
 // New mở Postgres, chạy migration và dựng toàn bộ route.
@@ -84,6 +98,14 @@ func newServer(cfg Config, pool *pgxpool.Pool, opts Options) (*Server, error) {
 		}
 		dist = sub
 	}
+	box, err := secret.New(cfg.MasterKey)
+	if err != nil {
+		return nil, err
+	}
+	catalog := opts.Catalog
+	if catalog == nil {
+		catalog = keys.NewCatalog(models.DefaultRegistry())
+	}
 	s := &Server{
 		cfg:     cfg,
 		version: opts.Version,
@@ -92,7 +114,12 @@ func newServer(cfg Config, pool *pgxpool.Pool, opts Options) (*Server, error) {
 		root:    http.NewServeMux(),
 		api:     http.NewServeMux(),
 		closing: make(chan struct{}),
+		auth:    auth.NewService(pool, cfg.Dev),
+		keyRepo: keys.NewRepo(pool, box),
+		catalog: catalog,
 	}
+	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
+	s.afterHTTP = append(s.afterHTTP, func(context.Context) { s.bgCancel() })
 	if err := s.routes(); err != nil {
 		return nil, err
 	}
@@ -106,6 +133,8 @@ func (s *Server) routes() error {
 	}
 	// Route JSON thường: CSRF → bắt buộc JSON → giới hạn body → timeout.
 	s.root.Handle("/api/", httpx.Chain(s.api, crossOrigin, httpx.RequireJSON, httpx.MaxBytes(maxBodyBytes), httpx.Timeout(requestTimeout)))
+	s.auth.Register(s.api)
+	keys.NewHandlers(s.keyRepo, s.catalog, s.auth, nil).Register(s.api)
 	s.api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Không tìm thấy API này")
 	})
@@ -146,6 +175,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		MaxHeaderBytes:    64 << 10,
 		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
+	s.startBackground()
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
 	slog.Info("server đang lắng nghe", "addr", ln.Addr().String(), "version", s.version)
@@ -184,6 +214,27 @@ func (s *Server) shutdownRest(ctx context.Context) {
 	if s.pool != nil {
 		s.pool.Close()
 	}
+}
+
+// startBackground chạy các việc nền: nạp/làm mới bảng giá model, dọn session hết
+// hạn và rate limiter.
+func (s *Server) startBackground() {
+	s.catalog.StartRefresh(s.bgCtx, filepath.Join(s.cfg.DataDir, "cache"))
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-s.bgCtx.Done():
+				return
+			case <-t.C:
+				if err := s.auth.Sessions().PurgeExpired(s.bgCtx); err != nil {
+					slog.Warn("dọn session hết hạn thất bại", "err", err)
+				}
+				s.auth.SweepLimiters()
+			}
+		}
+	}()
 }
 
 // lowDiskBytes: dưới mức này /healthz báo disk_low để cảnh báo trước khi đầy.
